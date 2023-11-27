@@ -1,0 +1,32 @@
+{
+  "name": "dusd-locks",
+  "version": "0.1.0",
+  "description": "A sample implementation for the DUSD Locks idea.",
+  "scripts": {
+      "build": "tsc -b ./tsconfig.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kuegi/dusd-lock-bot.git"
+  },
+  "author": "kuegi",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/kuegi/dusd-lock-bot/issues"
+  },
+  "homepage": "https://github.com/kuegi/dusd-lock-bot#readme",
+  "dependencies": {
+      "@defichain/jellyfish-network": "^4.0.1",
+      "@defichain/jellyfish-transaction": "^4.0.1",
+      "@defichain/jellyfish-wallet": "^4.0.0",
+      "@defichain/jellyfish-wallet-classic": "^4.0.1",
+      "@defichain/whale-api-client": "^4.0.1",
+      "@defichain/whale-api-wallet": "^4.0.1",
+      "bignumber.js": "^9.0.2",
+      "ethers": "^5.7.1",
+      "typescript": "4.6.2"
+  },
+  "devDependencies": {
+      "@types/node": "^17.0.41"
+  }
+}
