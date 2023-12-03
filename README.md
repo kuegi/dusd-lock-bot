@@ -1,2 +1,3 @@
 # dusd-lock-bot
-sample implementation how the DUSDLOCK bot could look like
+
+sample implementation how the DUSD LOCK could be implemented.

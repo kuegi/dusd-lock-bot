@@ -25,13 +25,12 @@ async function swapAndTransfer(): Promise<void> {
   const dvmScript = fromAddress(dvmAddress, ocean.network.name)?.script as Script
   const evmAddress = await account.getEvmAddress()
 
-  const tokenId = ocean.network == MainNet ? 15 : 11
+  const dusdId = ocean.network == MainNet ? 15 : 11
 
   let nonce = await evmProvider.getTransactionCount(evmAddress) //get Nonce
 
   //get DUSD-DFI price
   const dusdDfi = await ocean.client.poolpairs.get('DUSD-DFI')
-  const dusdId = +dusdDfi.tokenA.id
   const price = dusdDfi.priceRatio.ab
 
   // calc max DFI to swap (capped to 20 DUSD/block)
@@ -65,7 +64,7 @@ async function swapAndTransfer(): Promise<void> {
 
   const tdTx = await createSignedTransferDomainTx({
     account,
-    tokenId,
+    tokenId: dusdId,
     amount: amount,
     convertDirection: ConvertDirection.dvmToEvm,
     dvmAddress,
@@ -94,6 +93,7 @@ async function swapAndTransfer(): Promise<void> {
   txUnsigned.nonce = nonce
   const signedTx = await signer.signTransaction(txUnsigned)
   const submittedTx = await evmProvider.sendTransaction(signedTx)
+  //TODO: check receit?
 }
 
 // helper for sending
