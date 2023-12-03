@@ -101,7 +101,7 @@ contract DUSDLock {
         }
     }
 
-    //ment to be called by BBB sending rewards in, but can be called by anyone who wants to incentivize
+    //meant to be called by native bot sending rewards in, but can be called by anyone who wants to incentivize
     function addRewards(uint256 rewardAmount) external {
         coin.transferFrom(msg.sender, address(this), rewardAmount);
         uint256 distributedRewards= 0;
