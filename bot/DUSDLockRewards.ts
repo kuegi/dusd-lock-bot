@@ -85,15 +85,46 @@ async function swapAndTransfer(): Promise<void> {
   const lockSCAddress = '0x...'
 
   const lockSC = new ethers.Contract(lockSCAddress, DUSDLock, signer)
-  const txUnsigned = await lockSC.populateTransaction.addRewards(amount)
 
-  txUnsigned.chainId = chainId
-  txUnsigned.gasLimit = ethers.BigNumber.from(200_000) //TODO: add real gaslimit
-  txUnsigned.maxFeePerGas = ethers.BigNumber.from(20)
-  txUnsigned.nonce = nonce
-  const signedTx = await signer.signTransaction(txUnsigned)
-  const submittedTx = await evmProvider.sendTransaction(signedTx)
-  //TODO: check receit?
+  //TODO: add real gaslimit
+  const sentRewards = await signAndSendEVMTx(
+    signer,
+    await lockSC.populateTransaction.addRewards(amount),
+    10_000_000,
+    nonce,
+    chainId,
+    evmProvider,
+  )
+  nonce++
+
+  //TODO: check receit ? wait for confirmation?
+
+  //trigger distribute rewards
+  //TODO: check if distribution necessary, determine batchsize
+  const distribute = await signAndSendEVMTx(
+    signer,
+    await lockSC.populateTransaction.distributeRewards(10_000),
+    10_000_000,
+    nonce,
+    chainId,
+    evmProvider,
+  )
+}
+
+async function signAndSendEVMTx(
+  signer: ethers.Wallet,
+  tx: ethers.PopulatedTransaction,
+  gasLimit: number,
+  nonce: number,
+  chainId: number,
+  provider: ethers.providers.Provider,
+): Promise<ethers.providers.TransactionResponse> {
+  tx.chainId = chainId
+  tx.gasLimit = ethers.BigNumber.from(gasLimit)
+  tx.maxFeePerGas = ethers.BigNumber.from(20)
+  tx.nonce = nonce
+  const signedTx = await signer.signTransaction(tx)
+  return await provider.sendTransaction(signedTx)
 }
 
 // helper for sending

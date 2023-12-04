@@ -24,8 +24,10 @@ contract DUSDLock {
     IERC20 public immutable coin;
     bool public exitCriteriaTriggered;
 
-    uint256 totalInvest;
+    uint256 public totalInvest;
 
+    uint256 totalRewardsToDistribute;
+    uint256 indexToStartNextRewardBatch;
 
     constructor(uint256 lockupTime, uint256 _totalCap, IERC20 lockedCoin) {
         owner= msg.sender;
@@ -105,18 +107,22 @@ contract DUSDLock {
         }
     }
 
-    uint256 public totalRewardsToDistribute;
-    uint256 indexToStartNextRewardBatch;
+    function needRewardDistribution() external view returns(bool) {
+        return totalRewardsToDistribute > 0;
+    }
 
     //meant to be called by native bot sending rewards in, but can be called by anyone who wants to incentivize
     function addRewardsForDistribution(uint256 rewardAmount) external {
         require(indexToStartNextRewardBatch == 0,"reward distribution in progress");
         totalRewardsToDistribute += rewardAmount;
         coin.transferFrom(msg.sender, address(this), rewardAmount);
+        //start distribution, if not too many addresses are in, we do not need extra call 
+        //TODO: determine first batchSize
+        distributeRewards(1000);
     }
 
     //must be called in reasonable batch sizes to not go over the gas limit
-    function distributeRewards(uint256 maxAddressesInBatch) external {
+    function distributeRewards(uint256 maxAddressesInBatch) public {
         require(totalRewardsToDistribute > 0,"no rewards to distribute");
         require(maxAddressesInBatch > 0,"empty batch is not allowed");
         uint256 batchEnd= indexToStartNextRewardBatch + maxAddressesInBatch;
@@ -125,8 +131,7 @@ contract DUSDLock {
         }
         for(uint i= indexToStartNextRewardBatch; i < batchEnd;++i) {
             address addr= allAddresses[i];
-            uint256 invest= activeInvestPerAddress[addr];
-            uint256 rewardPart= (invest*totalRewardsToDistribute)/totalInvest;
+            uint256 rewardPart= (activeInvestPerAddress[addr] * totalRewardsToDistribute)/totalInvest;
             rewards[addr] += rewardPart;
         }
         if(batchEnd >= allAddresses.length) {
