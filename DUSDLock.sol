@@ -32,9 +32,9 @@ contract DUSDLock {
     uint256 public totalInvest;
     uint256 public totalAvailableRewards;
 
-    uint256 totalRewardsToDistribute;
+    uint256 public totalRewardsToDistribute;
     uint256 indexToStartNextRewardBatch;
-    uint256 lastRewardsBlock;
+    uint256 public lastRewardsBlock;
 
     constructor(uint256 lockupTime, uint256 _totalCap, IERC20 lockedCoin) {
         owner= msg.sender;
@@ -82,6 +82,7 @@ contract DUSDLock {
     function lockup(uint256 funds) external {
         require(totalInvest+funds <= totalInvestCap,"Total invest cap reached");
         require(indexToStartNextRewardBatch == 0,"can't add funds during reward distribution");
+        require(funds >= 10*(10**18),"min funds not meet"); //to prevent spam of low fund addresses which drives up gas price on reward distribution
         coin.transferFrom(msg.sender,address(this),funds);
         LockEntry[] storage entries= investments[msg.sender];
         if(entries.length == 0) {
@@ -129,10 +130,18 @@ contract DUSDLock {
         return totalRewardsToDistribute > 0;
     }
 
+    //this way rewards are always claimable and every address always gets exactly their share of rewards based on the share of the funds at time or rewards
+    // but this drives up the gas used for reward distribution
+    //
+    //alternative would be to just accumulate rewards in total and at time of withdrawal, add according share of rewards to the claim
+    // would mean that users can not claim rewards during the lockup
+    //
+    // good middle ground: call the addRewardsForDistribution daily(?) but distributeRewards only once a week -> strongly reduces overall gas cost.
+
     //meant to be called by native bot sending rewards in, but can be called by anyone who wants to incentivize
     function addRewardsForDistribution(uint256 rewardAmount,uint initialDistributionBatch) external {
         require(indexToStartNextRewardBatch == 0,"reward distribution in progress");
-        require(rewardAmount > 0,"rewards can't be empty");
+        require(rewardAmount > 20*(10**18),"rewards too low"); //to prevent someone adding rewards and forcing others to call distributeRewards.
         require(totalInvest > 0,"can't distribute rewards on empty invest");
         totalRewardsToDistribute += rewardAmount;
         coin.transferFrom(msg.sender, address(this), rewardAmount);
