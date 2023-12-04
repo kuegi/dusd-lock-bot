@@ -12,22 +12,25 @@ struct LockEntry {
 contract DUSDLock {
 
     mapping(address => LockEntry[]) public investments;
+    mapping(address => uint256) public activeInvestPerAddress;
     mapping(address => uint256) public rewards;
     address[] private allAddresses;
 
     //lockup period in seconds
-    uint256 public lockupPeriod;
+    uint256 public immutable lockupPeriod;
+    uint256 public immutable totalInvestCap;
     
     address owner;
-    IERC20 public coin;
+    IERC20 public immutable coin;
     bool public exitCriteriaTriggered;
 
     uint256 totalInvest;
 
 
-    constructor(uint256 lockupTime,IERC20 lockedCoin) {
+    constructor(uint256 lockupTime, uint256 _totalCap, IERC20 lockedCoin) {
         owner= msg.sender;
         lockupPeriod= lockupTime;
+        totalInvestCap= _totalCap;
         coin= lockedCoin;
         exitCriteriaTriggered= false;
     }
@@ -50,11 +53,7 @@ contract DUSDLock {
     }
 
     function activeInvest(address addr) public view returns(uint256 invest) {
-        LockEntry[] storage entries= investments[addr];
-        invest= 0;
-        for(uint i= 0; i < entries.length;i++) {
-            invest += entries[i].amount;
-        }
+        return activeInvestPerAddress[addr];
     }
 
     function earliestUnlock(address addr) public view returns(uint256 timestamp) {
@@ -68,16 +67,20 @@ contract DUSDLock {
     }
 
     function lockup(uint256 funds) external {
+        require(totalInvest+funds <= totalInvestCap,"Total invest cap reached");
+        require(indexToStartNextRewardBatch == 0,"can't add funds during reward distribution");
         coin.transferFrom(msg.sender,address(this),funds);
         LockEntry[] storage entries= investments[msg.sender];
         if(entries.length == 0) {
             allAddresses.push(msg.sender);
         }
         entries.push(LockEntry(funds,block.timestamp+lockupPeriod));
+        activeInvestPerAddress[msg.sender] += funds;
         totalInvest += funds;
     }
 
     function withdraw() external returns(uint256 foundWithdrawable) {
+        require(indexToStartNextRewardBatch == 0,"can't remove funds during reward distribution");
         LockEntry[] storage entries= investments[msg.sender];
         foundWithdrawable= 0;
         for(uint i= 0; i < entries.length;i++){
@@ -87,8 +90,9 @@ contract DUSDLock {
                 entry.amount= 0;
             }
         } 
-        if(foundWithdrawable > 0) {
+        if(foundWithdrawable > 0 && activeInvestPerAddress[msg.sender] >= foundWithdrawable) {
             totalInvest -= foundWithdrawable;
+            activeInvestPerAddress[msg.sender] -= foundWithdrawable;
             coin.transfer(msg.sender, foundWithdrawable);
         }
     }
@@ -101,18 +105,36 @@ contract DUSDLock {
         }
     }
 
+    uint256 public totalRewardsToDistribute;
+    uint256 indexToStartNextRewardBatch;
+
     //meant to be called by native bot sending rewards in, but can be called by anyone who wants to incentivize
-    function addRewards(uint256 rewardAmount) external {
+    function addRewardsForDistribution(uint256 rewardAmount) external {
+        require(indexToStartNextRewardBatch == 0,"reward distribution in progress");
+        totalRewardsToDistribute += rewardAmount;
         coin.transferFrom(msg.sender, address(this), rewardAmount);
-        uint256 distributedRewards= 0;
-        for(uint i= 0; i < allAddresses.length;i++) {
+    }
+
+    //must be called in reasonable batch sizes to not go over the gas limit
+    function distributeRewards(uint256 maxAddressesInBatch) external {
+        require(totalRewardsToDistribute > 0,"no rewards to distribute");
+        require(maxAddressesInBatch > 0,"empty batch is not allowed");
+        uint256 batchEnd= indexToStartNextRewardBatch + maxAddressesInBatch;
+        if(batchEnd >= allAddresses.length) {
+            batchEnd= allAddresses.length;
+        }
+        for(uint i= indexToStartNextRewardBatch; i < batchEnd;++i) {
             address addr= allAddresses[i];
-            uint256 invest= activeInvest(addr);
-            uint256 rewardPart= (invest*rewardAmount)/totalInvest;
-            distributedRewards+= rewardPart;
+            uint256 invest= activeInvestPerAddress[addr];
+            uint256 rewardPart= (invest*totalRewardsToDistribute)/totalInvest;
             rewards[addr] += rewardPart;
         }
-        require(distributedRewards <= rewardAmount,"floating error in the wrong direction");
+        if(batchEnd >= allAddresses.length) {
+            totalRewardsToDistribute= 0;
+            indexToStartNextRewardBatch= 0;
+        } else {
+            indexToStartNextRewardBatch= batchEnd;
+        }
     }
 
 }
