@@ -11,9 +11,14 @@ struct LockEntry {
 
 contract DUSDLock {
 
+    event DepositAdded(address depositer, uint256 amount, uint256 newTVL);
+    event Withdrawal(address user, uint256 withdrawnFunds, uint256 newTVL);
+    event RewardsAdded(uint256 addedRewards, uint256 blocksSinceLastRewards, uint256 currentTVL);
+    event RewardsClaimed(address user, uint256 claimedRewards);
+
     mapping(address => LockEntry[]) public investments;
-    mapping(address => uint256) public activeInvestPerAddress;
-    mapping(address => uint256) public rewards;
+    mapping(address => uint256) activeInvestPerAddress;
+    mapping(address => uint256) rewards;
     address[] private allAddresses;
 
     //lockup period in seconds
@@ -25,9 +30,11 @@ contract DUSDLock {
     bool public exitCriteriaTriggered;
 
     uint256 public totalInvest;
+    uint256 public totalAvailableRewards;
 
     uint256 totalRewardsToDistribute;
     uint256 indexToStartNextRewardBatch;
+    uint256 lastRewardsBlock;
 
     constructor(uint256 lockupTime, uint256 _totalCap, IERC20 lockedCoin) {
         owner= msg.sender;
@@ -52,6 +59,10 @@ contract DUSDLock {
 
     function availableRewards(address addr) public view returns(uint256 rew) {
         rew = rewards[addr];
+    }
+
+    function investmentsOfAddress(address addr) public view returns(uint count) {
+        count= investments[addr].length;
     }
 
     function activeInvest(address addr) public view returns(uint256 invest) {
@@ -79,6 +90,8 @@ contract DUSDLock {
         entries.push(LockEntry(funds,block.timestamp+lockupPeriod));
         activeInvestPerAddress[msg.sender] += funds;
         totalInvest += funds;
+
+        emit DepositAdded(msg.sender, funds, totalInvest);
     }
 
     function withdraw() external returns(uint256 foundWithdrawable) {
@@ -96,6 +109,8 @@ contract DUSDLock {
             totalInvest -= foundWithdrawable;
             activeInvestPerAddress[msg.sender] -= foundWithdrawable;
             coin.transfer(msg.sender, foundWithdrawable);
+
+            emit Withdrawal(msg.sender, foundWithdrawable, totalInvest);
         }
     }
 
@@ -104,6 +119,9 @@ contract DUSDLock {
         if(claimed > 0) {
             rewards[msg.sender]= 0;
             coin.transfer(msg.sender, claimed);
+            totalAvailableRewards -= claimed;
+
+            emit RewardsClaimed(msg.sender, claimed);
         }
     }
 
@@ -112,13 +130,21 @@ contract DUSDLock {
     }
 
     //meant to be called by native bot sending rewards in, but can be called by anyone who wants to incentivize
-    function addRewardsForDistribution(uint256 rewardAmount) external {
+    function addRewardsForDistribution(uint256 rewardAmount,uint initialDistributionBatch) external {
         require(indexToStartNextRewardBatch == 0,"reward distribution in progress");
+        require(rewardAmount > 0,"rewards can't be empty");
+        require(totalInvest > 0,"can't distribute rewards on empty invest");
         totalRewardsToDistribute += rewardAmount;
         coin.transferFrom(msg.sender, address(this), rewardAmount);
+
+        emit RewardsAdded(rewardAmount, block.number-lastRewardsBlock, totalInvest);
+        lastRewardsBlock= block.number;
+
         //start distribution, if not too many addresses are in, we do not need extra call 
         //TODO: determine first batchSize
-        distributeRewards(1000);
+        if(initialDistributionBatch > 0) {
+            distributeRewards(initialDistributionBatch);
+        }
     }
 
     //must be called in reasonable batch sizes to not go over the gas limit
@@ -133,6 +159,7 @@ contract DUSDLock {
             address addr= allAddresses[i];
             uint256 rewardPart= (activeInvestPerAddress[addr] * totalRewardsToDistribute)/totalInvest;
             rewards[addr] += rewardPart;
+            totalAvailableRewards += rewardPart;
         }
         if(batchEnd >= allAddresses.length) {
             totalRewardsToDistribute= 0;

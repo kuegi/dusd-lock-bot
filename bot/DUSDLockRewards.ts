@@ -6,12 +6,13 @@ import { WIF } from '@defichain/jellyfish-crypto'
 
 import { ethers, providers } from 'ethers'
 
-import { ConvertDirection, createSignedTransferDomainTx } from './TransferDomainHelper'
+import { ConvertDirection, createSignedTransferDomainTx, getAddressFromDST20TokenId } from './TransferDomainHelper'
 import { OceanAccess } from './OceanAccess'
 import { Script } from '@defichain/jellyfish-transaction'
 import { fromAddress } from '@defichain/jellyfish-address'
 
 import DUSDLock from './DUSDLock.json'
+import ERC20 from './ERC20.json'
 
 async function swapAndTransfer(): Promise<void> {
   const ocean = new OceanAccess(TestNet)
@@ -79,36 +80,55 @@ async function swapAndTransfer(): Promise<void> {
   nonce = await evmProvider.getTransactionCount(evmAddress)
   const signer = new ethers.Wallet(await account.privateKey(), evmProvider)
 
-  //TODO: approve DUSD amount on EVM side
-
   // create call to Bot SC
+
+  //TODO: approve DUSD amount on EVM side
+  const dusdSC = new ethers.Contract(getAddressFromDST20TokenId(dusdId), ERC20.abi, signer)
+
+  //TODO: split amount 3/8 to 1 year lock and 5/8 to 2 year lock
+  // for each do the following:
+
   const lockSCAddress = '0x...'
+  const lockSC = new ethers.Contract(lockSCAddress, DUSDLock.abi, signer)
 
-  const lockSC = new ethers.Contract(lockSCAddress, DUSDLock, signer)
-
-  //TODO: add real gaslimit
-  const sentRewards = await signAndSendEVMTx(
+  const approveTx = await signAndSendEVMTx(
     signer,
-    await lockSC.populateTransaction.addRewards(amount),
-    10_000_000,
+    await dusdSC.populateTransaction.approve(lockSCAddress, amount),
+    1_000_000,
     nonce,
     chainId,
     evmProvider,
   )
   nonce++
 
-  //TODO: check receit ? wait for confirmation?
-
-  //trigger distribute rewards
-  //TODO: check if distribution necessary, determine batchsize
-  const distribute = await signAndSendEVMTx(
+  //TODO: add real gaslimit
+  const rewardsTx = await signAndSendEVMTx(
     signer,
-    await lockSC.populateTransaction.distributeRewards(10_000),
+    await lockSC.populateTransaction.addRewards(amount, 500),
     10_000_000,
     nonce,
     chainId,
     evmProvider,
   )
+  nonce++
+  //TODO: wait for tx to be confirmed
+
+  let needDistribute = await lockSC.functions.needDistribute()
+  //trigger distribute rewards
+  while (needDistribute) {
+    //TODO: determine reasonable batchsize
+    const distributeTx = await signAndSendEVMTx(
+      signer,
+      await lockSC.populateTransaction.distributeRewards(500),
+      10_000_000,
+      nonce,
+      chainId,
+      evmProvider,
+    )
+    nonce++
+    //TODO: wait for tx to be confirmed and check next
+    needDistribute = await lockSC.functions.needDistribute()
+  }
 }
 
 async function signAndSendEVMTx(
