@@ -4,9 +4,7 @@ pragma solidity >=0.8.22;
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 struct LockEntry {
-    address owner;
     uint256 amount;
-    uint256 withdrawn;
     uint256 lockedUntil;
     uint256 initialRewardsPerDeposit;
     uint256 claimedRewards;
@@ -21,6 +19,7 @@ contract DUSDLock {
     event RewardsClaimed(address user, uint256 claimedRewards);
 
     mapping(address => LockEntry[]) public investments;
+    address[] allAddresses;
 
     //lockup period in seconds
     uint256 public immutable lockupPeriod;
@@ -57,13 +56,20 @@ contract DUSDLock {
         return totalInvest-totalWithdrawn;
     }
 
+    function nrOfAddresses() external view returns(uint256) {
+        return allAddresses.length;
+    }
+
+    function getAddress(uint256 index) external view returns(address) {
+        return allAddresses[index];
+    }
+
 
     function availableRewards(address addr,uint batch) public view returns(uint256) {
-        LockEntry[] storage entries= investments[addr];
+        LockEntry[] memory entries= investments[addr];
         require(entries.length > batch,"DUSDLock: batch not found for this address");
         uint256 addedRewPerDeposit= rewardsPerDeposit - entries[batch].initialRewardsPerDeposit;
-        uint256 remainingFunds= entries[batch].amount - entries[batch].withdrawn;
-        uint256 totalRewardsForFunds= addedRewPerDeposit*remainingFunds/1e18;
+        uint256 totalRewardsForFunds= addedRewPerDeposit*entries[batch].amount/1e18;
         if(totalRewardsForFunds > entries[batch].claimedRewards) {
             return totalRewardsForFunds - entries[batch].claimedRewards;
         } else {
@@ -76,7 +82,7 @@ contract DUSDLock {
     }
 
     function earliestUnlock(address addr) external view returns(uint256 timestamp,uint batchId) {
-        LockEntry[] storage entries= investments[addr];
+        LockEntry[] memory entries= investments[addr];
         timestamp = block.timestamp + lockupPeriod;
         batchId = 0;
         for(uint i= 0; i < entries.length;i++) {
@@ -88,11 +94,14 @@ contract DUSDLock {
     }
 
     function lockup(uint256 funds) external {
-        require(totalInvest+funds <= totalInvestCap,"DUSDLock: Total invest cap reached");
+        require(currentTvl()+funds <= totalInvestCap,"DUSDLock: Total invest cap reached");
         coin.safeTransferFrom(msg.sender,address(this),funds);
         LockEntry[] storage entries= investments[msg.sender];
-        
-        entries.push(LockEntry(msg.sender,funds,0,block.timestamp+lockupPeriod,rewardsPerDeposit,0));
+        if(entries.length == 0) {
+            //fresh entry
+            allAddresses.push(msg.sender);
+        }
+        entries.push(LockEntry(funds,block.timestamp+lockupPeriod,rewardsPerDeposit,0));
         totalInvest += funds;
 
         emit DepositAdded(msg.sender, funds, currentTvl());
@@ -105,11 +114,11 @@ contract DUSDLock {
         
         LockEntry storage entry= entries[batchId];
         require(entry.lockedUntil < block.timestamp || exitCriteriaTriggered,"DUSDLock: can not withdraw before lockup ended");
-        require(entry.withdrawn == 0,"DUSDLock: already withdrawn");
+        require(entry.amount > 0,"DUSDLock: already withdrawn");
 
         withdrawAmount= entry.amount;
         totalWithdrawn += withdrawAmount;
-        entry.withdrawn+= withdrawAmount;
+        entry.amount= 0;
         coin.safeTransfer(msg.sender, withdrawAmount);
 
         emit Withdrawal(msg.sender, withdrawAmount, currentTvl());
