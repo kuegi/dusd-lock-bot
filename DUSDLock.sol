@@ -53,26 +53,26 @@ contract DUSDLock {
         exitCriteriaTriggered= true;
     }
 
-    function currentTvl() public view returns(uint256 tvl) {
-        tvl= totalInvest-totalWithdrawn;
+    function currentTvl() public view returns(uint256) {
+        return totalInvest-totalWithdrawn;
     }
 
 
-    function availableRewards(address addr,uint batch) public view returns(uint256 rew) {
+    function availableRewards(address addr,uint batch) public view returns(uint256) {
         LockEntry[] storage entries= investments[addr];
         require(entries.length > batch,"DUSDLock: batch not found for this address");
         uint256 addedRewPerDeposit= rewardsPerDeposit - entries[batch].initialRewardsPerDeposit;
         uint256 remainingFunds= entries[batch].amount - entries[batch].withdrawn;
         uint256 totalRewardsForFunds= addedRewPerDeposit*remainingFunds/1e18;
         if(totalRewardsForFunds > entries[batch].claimedRewards) {
-            return totalRewardsForFunds - totalRewardsForFunds;
+            return totalRewardsForFunds - entries[batch].claimedRewards;
         } else {
             return  0;
         }
     }
 
-    function batchesInAddress(address addr) external view returns(uint count) {
-        count= investments[addr].length;
+    function batchesInAddress(address addr) external view returns(uint) {
+        return investments[addr].length;
     }
 
     function earliestUnlock(address addr) external view returns(uint256 timestamp,uint batchId) {
