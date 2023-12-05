@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.8.22;
 
-
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 struct LockEntry {
     address owner;
@@ -14,6 +13,7 @@ struct LockEntry {
 }
 
 contract DUSDLock {
+    using SafeERC20 for IERC20;
 
     event DepositAdded(address depositer, uint256 amount, uint256 newTVL);
     event Withdrawal(address user, uint256 withdrawnFunds, uint256 newTVL);
@@ -33,6 +33,9 @@ contract DUSDLock {
     uint256 public totalInvest;
     uint256 public totalWithdrawn;
     uint256 public totalRewards;
+
+    //keeps track of the total rewards per deposit since the beginning of the contract, number can only go up
+    //is used for rewards calculation. as the total rewards for a specific deposits is (rewardsPerDeposit - rewardsPerDepositOnDeposit)*depositSize
     uint256 public rewardsPerDeposit;
 
     uint256 public lastRewardsBlock;
@@ -46,7 +49,7 @@ contract DUSDLock {
     }
 
     function triggerExitCriteria() external {
-        require(msg.sender == owner,"only owner allowed");
+        require(msg.sender == owner,"DUSDLock: only owner allowed to trigger exit criteria");
         exitCriteriaTriggered= true;
     }
 
@@ -86,7 +89,7 @@ contract DUSDLock {
 
     function lockup(uint256 funds) external {
         require(totalInvest+funds <= totalInvestCap,"DUSDLock: Total invest cap reached");
-        coin.transferFrom(msg.sender,address(this),funds);
+        coin.safeTransferFrom(msg.sender,address(this),funds);
         LockEntry[] storage entries= investments[msg.sender];
         
         entries.push(LockEntry(msg.sender,funds,0,block.timestamp+lockupPeriod,rewardsPerDeposit,0));
@@ -107,7 +110,7 @@ contract DUSDLock {
         withdrawAmount= entry.amount;
         totalWithdrawn += withdrawAmount;
         entry.withdrawn+= withdrawAmount;
-        coin.transfer(msg.sender, withdrawAmount);
+        coin.safeTransfer(msg.sender, withdrawAmount);
 
         emit Withdrawal(msg.sender, withdrawAmount, currentTvl());
     }
@@ -117,14 +120,14 @@ contract DUSDLock {
         require(claimed > 0,"DUSDLock: no rewards to claim");
         LockEntry storage entry= investments[msg.sender][batchId];
         entry.claimedRewards += claimed;
-        coin.transfer(msg.sender, claimed);
+        coin.safeTransfer(msg.sender, claimed);
 
         emit RewardsClaimed(msg.sender, claimed);
     }
 
     function addRewards(uint256 rewardAmount) external {
-        require(totalInvest-totalWithdrawn > 0,"can not distribute rewards on empty TVL");
-        coin.transferFrom(msg.sender, address(this), rewardAmount);
+        require(totalInvest-totalWithdrawn > 0,"DUSDLock: can not distribute rewards on empty TVL");
+        coin.safeTransferFrom(msg.sender, address(this), rewardAmount);
         totalRewards += rewardAmount;
 
         rewardsPerDeposit += (rewardAmount * 1e18)/(totalInvest-totalWithdrawn);
