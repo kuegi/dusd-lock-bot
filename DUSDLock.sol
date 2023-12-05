@@ -32,6 +32,7 @@ contract DUSDLock {
     uint256 public totalInvest;
     uint256 public totalWithdrawn;
     uint256 public totalRewards;
+    uint256 public totalClaims;
 
     //keeps track of the total rewards per deposit since the beginning of the contract, number can only go up
     //is used for rewards calculation. as the total rewards for a specific deposits is (rewardsPerDeposit - rewardsPerDepositOnDeposit)*depositSize
@@ -129,6 +130,7 @@ contract DUSDLock {
         require(claimed > 0,"DUSDLock: no rewards to claim");
         LockEntry storage entry= investments[msg.sender][batchId];
         entry.claimedRewards += claimed;
+        totalClaims += claimed;
         coin.safeTransfer(msg.sender, claimed);
 
         emit RewardsClaimed(msg.sender, claimed);
