@@ -82,7 +82,6 @@ async function swapAndTransfer(): Promise<void> {
 
   // create call to Bot SC
 
-  //TODO: approve DUSD amount on EVM side
   const dusdSC = new ethers.Contract(getAddressFromDST20TokenId(dusdId), ERC20.abi, signer)
 
   //TODO: split amount 3/8 to 1 year lock and 5/8 to 2 year lock
@@ -104,31 +103,13 @@ async function swapAndTransfer(): Promise<void> {
   //TODO: add real gaslimit
   const rewardsTx = await signAndSendEVMTx(
     signer,
-    await lockSC.populateTransaction.addRewards(amount, 500),
-    10_000_000,
+    await lockSC.populateTransaction.addRewards(amount),
+    1_000_000,
     nonce,
     chainId,
     evmProvider,
   )
   nonce++
-  //TODO: wait for tx to be confirmed
-
-  let needDistribute = await lockSC.functions.needDistribute()
-  //trigger distribute rewards
-  while (needDistribute) {
-    //TODO: determine reasonable batchsize
-    const distributeTx = await signAndSendEVMTx(
-      signer,
-      await lockSC.populateTransaction.distributeRewards(500),
-      10_000_000,
-      nonce,
-      chainId,
-      evmProvider,
-    )
-    nonce++
-    //TODO: wait for tx to be confirmed and check next
-    needDistribute = await lockSC.functions.needDistribute()
-  }
 }
 
 async function signAndSendEVMTx(
