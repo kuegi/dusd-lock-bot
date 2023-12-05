@@ -5,8 +5,12 @@ pragma solidity >=0.8.22;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 struct LockEntry {
+    address owner;
     uint256 amount;
+    uint256 withdrawn;
     uint256 lockedUntil;
+    uint256 initialRewardsPerDeposit;
+    uint256 claimedRewards;
 }
 
 contract DUSDLock {
@@ -17,9 +21,6 @@ contract DUSDLock {
     event RewardsClaimed(address user, uint256 claimedRewards);
 
     mapping(address => LockEntry[]) public investments;
-    mapping(address => uint256) activeInvestPerAddress;
-    mapping(address => uint256) rewards;
-    address[] private allAddresses;
 
     //lockup period in seconds
     uint256 public immutable lockupPeriod;
@@ -30,10 +31,10 @@ contract DUSDLock {
     bool public exitCriteriaTriggered;
 
     uint256 public totalInvest;
-    uint256 public totalAvailableRewards;
+    uint256 public totalWithdrawn;
+    uint256 public totalRewards;
+    uint256 public rewardsPerDeposit;
 
-    uint256 public totalRewardsToDistribute;
-    uint256 indexToStartNextRewardBatch;
     uint256 public lastRewardsBlock;
 
     constructor(uint256 lockupTime, uint256 _totalCap, IERC20 lockedCoin) {
@@ -49,139 +50,83 @@ contract DUSDLock {
         exitCriteriaTriggered= true;
     }
 
-    function nrAddresses() public view returns(uint256 amount) {
-        amount= allAddresses.length;
+    function currentTvl() public view returns(uint256 tvl) {
+        tvl= totalInvest-totalWithdrawn;
     }
 
-    function getAddress(uint256 index) public view returns(address addr) {
-        addr= allAddresses[index];
+
+    function availableRewards(address addr,uint batch) public view returns(uint256 rew) {
+        LockEntry[] storage entries= investments[addr];
+        require(entries.length <= batch,"DUSDLock: batch not found for this address");
+        uint256 addedRewPerDeposit= rewardsPerDeposit - entries[batch].initialRewardsPerDeposit;
+        uint256 remainingFunds= entries[batch].amount - entries[batch].withdrawn;
+        return addedRewPerDeposit*remainingFunds/1e18 - entries[batch].claimedRewards;
     }
 
-    function availableRewards(address addr) public view returns(uint256 rew) {
-        rew = rewards[addr];
-    }
-
-    function investmentsOfAddress(address addr) public view returns(uint count) {
+    function batchesInAddress(address addr) public view returns(uint count) {
         count= investments[addr].length;
     }
 
-    function activeInvest(address addr) public view returns(uint256 invest) {
-        return activeInvestPerAddress[addr];
-    }
-
-    function earliestUnlock(address addr) public view returns(uint256 timestamp) {
+    function earliestUnlock(address addr) public view returns(uint256 timestamp,uint batchId) {
         LockEntry[] storage entries= investments[addr];
         timestamp = block.timestamp + lockupPeriod;
+        batchId = 0;
         for(uint i= 0; i < entries.length;i++) {
             if(entries[i].lockedUntil < timestamp) {
                 timestamp= entries[i].lockedUntil;
+                batchId= i;
             }
         }
     }
 
     function lockup(uint256 funds) external {
         require(totalInvest+funds <= totalInvestCap,"Total invest cap reached");
-        require(indexToStartNextRewardBatch == 0,"can't add funds during reward distribution");
         require(funds >= 10*(10**18),"min funds not meet"); //to prevent spam of low fund addresses which drives up gas price on reward distribution
         coin.transferFrom(msg.sender,address(this),funds);
         LockEntry[] storage entries= investments[msg.sender];
-        if(entries.length == 0) {
-            allAddresses.push(msg.sender);
-        }
-        entries.push(LockEntry(funds,block.timestamp+lockupPeriod));
-        activeInvestPerAddress[msg.sender] += funds;
+        
+        entries.push(LockEntry(msg.sender,funds,0,block.timestamp+lockupPeriod,rewardsPerDeposit,0));
         totalInvest += funds;
 
         emit DepositAdded(msg.sender, funds, totalInvest);
     }
 
-    function withdraw() external returns(uint256 foundWithdrawable) {
-        require(indexToStartNextRewardBatch == 0,"can't remove funds during reward distribution");
+    function withdraw(uint batchId) external returns(uint256 withdrawAmount) {
         LockEntry[] storage entries= investments[msg.sender];
-        foundWithdrawable= 0;
-        for(uint i= 0; i < entries.length;i++){
-            LockEntry storage entry= entries[i];
-            if(entry.lockedUntil < block.timestamp || exitCriteriaTriggered) {
-                foundWithdrawable+= entry.amount;
-                entry.amount= 0;
-            }
-        } 
-        if(foundWithdrawable > 0 && activeInvestPerAddress[msg.sender] >= foundWithdrawable) {
-            totalInvest -= foundWithdrawable;
-            activeInvestPerAddress[msg.sender] -= foundWithdrawable;
-            coin.transfer(msg.sender, foundWithdrawable);
+        require(entries.length <= batchId,"DUSDLock: batch not found for this address");
+        require(availableRewards(msg.sender,batchId) == 0,"DUSDLock: claim rewards before withdraw");
+        
+        LockEntry storage entry= entries[batchId];
+        require(entry.lockedUntil < block.timestamp || exitCriteriaTriggered,"DUSDLock: can not withdraw before lockup ended");
+        require(entry.withdrawn == 0,"DUSDLock: already withdrawn");
 
-            emit Withdrawal(msg.sender, foundWithdrawable, totalInvest);
-        }
+        withdrawAmount= entry.amount;
+        totalWithdrawn += withdrawAmount;
+        entry.withdrawn+= withdrawAmount;
+        coin.transfer(msg.sender, withdrawAmount);
+
+        emit Withdrawal(msg.sender, withdrawAmount, totalInvest-totalWithdrawn);
     }
 
-    function claimRewards() public returns(uint256 claimed) {
-        claimed= rewards[msg.sender];
-        if(claimed > 0) {
-            rewards[msg.sender]= 0;
-            coin.transfer(msg.sender, claimed);
-            totalAvailableRewards -= claimed;
+    function claimRewards(uint batchId) internal returns(uint256 claimed) {
+        claimed= availableRewards(msg.sender,batchId);
+        require(claimed > 0,"DUSDLock: no rewards to claim");
+        LockEntry storage entry= investments[msg.sender][batchId];
+        entry.claimedRewards += claimed;
+        coin.transfer(msg.sender, claimed);
 
-            emit RewardsClaimed(msg.sender, claimed);
-        }
+        emit RewardsClaimed(msg.sender, claimed);
     }
 
-    function needRewardDistribution() external view returns(bool) {
-        return totalRewardsToDistribute > 0;
-    }
-
-    //this way rewards are always claimable and every address always gets exactly their share of rewards based on the share of the funds at time or rewards
-    // but this drives up the gas used for reward distribution
-    //
-    //alternative would be to just accumulate rewards in total and at time of withdrawal, add according share of rewards to the claim
-    // would mean that users can not claim rewards during the lockup
-    //
-    // good middle ground: call the addRewardsForDistribution daily(?) but distributeRewards only once a week -> strongly reduces overall gas cost.
-
-    //meant to be called by native bot sending rewards in, but can be called by anyone who wants to incentivize
-    function addRewardsForDistribution(uint256 rewardAmount,uint initialDistributionBatch) external {
-        require(indexToStartNextRewardBatch == 0,"reward distribution in progress");
-        require(rewardAmount > 20*(10**18),"rewards too low"); //to prevent someone adding rewards and forcing others to call distributeRewards.
-        require(totalInvest > 0,"can't distribute rewards on empty invest");
-        totalRewardsToDistribute += rewardAmount;
+    function addRewards(uint256 rewardAmount) external {
+        require(totalInvest-totalWithdrawn > 0,"can't distribute rewards on empty TVL");
         coin.transferFrom(msg.sender, address(this), rewardAmount);
+        totalRewards += rewardAmount;
 
-        emit RewardsAdded(rewardAmount, block.number-lastRewardsBlock, totalInvest);
+        rewardsPerDeposit += (rewardAmount * 1e18)/(totalInvest-totalWithdrawn);
+
+        emit RewardsAdded(rewardAmount, block.number-lastRewardsBlock, totalInvest-totalWithdrawn);
         lastRewardsBlock= block.number;
-
-        //start distribution, if not too many addresses are in, we do not need extra call 
-        //TODO: determine first batchSize
-        if(initialDistributionBatch > 0) {
-            distributeRewards(initialDistributionBatch);
-        }
-    }
-
-    //must be called in reasonable batch sizes to not go over the gas limit
-    function distributeRewards(uint256 maxAddressesInBatch) public {
-        require(totalRewardsToDistribute > 0,"no rewards to distribute");
-        require(maxAddressesInBatch > 0,"empty batch is not allowed");
-        if(totalInvest == 0) {
-            totalRewardsToDistribute= 0;
-            indexToStartNextRewardBatch= 0;
-            return; //to not get stuck in this edgecase
-        }
-        uint256 batchEnd= indexToStartNextRewardBatch + maxAddressesInBatch;
-        if(batchEnd >= allAddresses.length) {
-            batchEnd= allAddresses.length;
-        }
-        unchecked {
-            for(uint i= indexToStartNextRewardBatch; i < batchEnd;++i) {
-                address addr= allAddresses[i];
-                rewards[addr] += (activeInvestPerAddress[addr] * totalRewardsToDistribute)/totalInvest;
-            }
-        }
-        if(batchEnd >= allAddresses.length) {
-            totalAvailableRewards += totalRewardsToDistribute;
-            totalRewardsToDistribute= 0;
-            indexToStartNextRewardBatch= 0;
-        } else {
-            indexToStartNextRewardBatch= batchEnd;
-        }
     }
 
 }
