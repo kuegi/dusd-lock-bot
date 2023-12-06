@@ -15,7 +15,7 @@ contract DUSDLock {
 
     event DepositAdded(address depositer, uint256 amount, uint256 newTVL);
     event Withdrawal(address user, uint256 withdrawnFunds, uint256 newTVL);
-    event RewardsAdded(uint256 addedRewards, uint256 blocksSinceLastRewards, uint256 newRewardsClaimable);
+    event RewardsAdded(uint256 addedRewards, uint256 blocksSinceLastRewards, uint256 newRewardsClaimable, uint256 currentTvl);
     event RewardsClaimed(address user, uint256 claimedRewards, uint256 newRewardsClaimable);
 
     mapping(address => LockEntry[]) public investments;
@@ -59,12 +59,12 @@ contract DUSDLock {
 
     function currentOwnTvl() public view returns(uint256) {
         LockEntry[] memory entries= investments[msg.sender];
-        uint256 ownTlv= 0;
+        uint256 ownTvl= 0;
         for(uint batchId = 0; batchId < entries.length; ++batchId) {
             LockEntry storage entry= investments[msg.sender][batchId];
-            ownTlv += entry.amount; 
+            ownTvl += entry.amount; 
         }
-        return ownTlv;
+        return ownTvl;
     }
 
     function currentRewardsClaimable() public view returns(uint256) {
@@ -185,7 +185,7 @@ contract DUSDLock {
 
         rewardsPerDeposit += (rewardAmount * 1e18)/currentTvl();
 
-        emit RewardsAdded(rewardAmount, block.number-lastRewardsBlock, currentRewardsClaimable());
+        emit RewardsAdded(rewardAmount, block.number-lastRewardsBlock, currentRewardsClaimable(),currentTvl());
         lastRewardsBlock= block.number;
     }
 }
