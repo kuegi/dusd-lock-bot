@@ -15,11 +15,11 @@ contract DUSDLock {
 
     event DepositAdded(address depositer, uint256 amount, uint256 newTVL);
     event Withdrawal(address user, uint256 withdrawnFunds, uint256 newTVL);
-    event RewardsAdded(uint256 addedRewards, uint256 blocksSinceLastRewards, uint256 currentTVL);
-    event RewardsClaimed(address user, uint256 claimedRewards);
+    event RewardsAdded(uint256 addedRewards, uint256 blocksSinceLastRewards, uint256 newRewardsClaimable);
+    event RewardsClaimed(address user, uint256 claimedRewards, uint256 newRewardsClaimable);
 
     mapping(address => LockEntry[]) public investments;
-    address[] allAddresses;
+    address[] public allAddresses;
 
     //lockup period in seconds
     uint256 public immutable lockupPeriod;
@@ -57,14 +57,27 @@ contract DUSDLock {
         return totalInvest-totalWithdrawn;
     }
 
+    function currentOwnTvl() public view returns(uint256) {
+        LockEntry[] memory entries= investments[msg.sender];
+        uint256 ownTlv= 0;
+        for(uint batchId = 0; batchId < entries.length; ++batchId) {
+            LockEntry storage entry= investments[msg.sender][batchId];
+            ownTlv += entry.amount; 
+        }
+        return ownTlv;
+    }
+
+    function currentRewardsClaimable() public view returns(uint256) {
+        return totalRewards-totalClaimed;
+    }
+
     function nrOfAddresses() external view returns(uint256) {
         return allAddresses.length;
     }
 
-    function getAddress(uint256 index) external view returns(address) {
-        return allAddresses[index];
+    function getAllAddress() external view returns(address[] memory) {
+        return allAddresses;
     }
-
 
     function availableRewards(address addr,uint batch) public view returns(uint256) {
         LockEntry[] memory entries= investments[addr];
@@ -76,6 +89,15 @@ contract DUSDLock {
         } else {
             return  0;
         }
+    }
+
+    function availableOwnRewards() public view returns (uint256) {
+        LockEntry[] memory entries= investments[msg.sender];
+        uint256 ownRewards= 0;
+        for(uint batchId = 0; batchId < entries.length; ++batchId) {
+            ownRewards += availableRewards(msg.sender, batchId);
+        }
+        return ownRewards;
     }
 
     function batchesInAddress(address addr) external view returns(uint) {
@@ -98,10 +120,7 @@ contract DUSDLock {
         require(currentTvl()+funds <= totalInvestCap,"DUSDLock: Total invest cap reached");
         coin.safeTransferFrom(msg.sender,address(this),funds);
         LockEntry[] storage entries= investments[msg.sender];
-        if(entries.length == 0) {
-            //fresh entry
-            allAddresses.push(msg.sender);
-        }
+        if(entries.length == 0) allAddresses.push(msg.sender);
         entries.push(LockEntry(funds,block.timestamp+lockupPeriod,rewardsPerDeposit,0));
         totalInvest += funds;
 
@@ -116,9 +135,7 @@ contract DUSDLock {
         require(entry.lockedUntil < block.timestamp || exitCriteriaTriggered,"DUSDLock: can not withdraw before lockup ended");
         require(entry.amount > 0,"DUSDLock: already withdrawn");
         
-        if(availableRewards(msg.sender,batchId) > 0) {
-            _claimBatch(msg.sender,batchId);
-        }
+        if(availableRewards(msg.sender,batchId) > 0) _claimBatch(msg.sender,batchId);
         
         withdrawAmount= entry.amount;
         totalWithdrawn += withdrawAmount;
@@ -140,7 +157,7 @@ contract DUSDLock {
         totalClaimed += claimed;
         coin.safeTransfer(addr, claimed);
 
-        emit RewardsClaimed(addr, claimed);
+        emit RewardsClaimed(addr, claimed, currentRewardsClaimable());
     }
 
     function claimAllRewards() external returns(uint256 total) {
@@ -154,19 +171,21 @@ contract DUSDLock {
                 total += claimed; 
             }
         }
+        require(total > 0,"DUSDLock: no rewards to claim");
         totalClaimed += total;
         coin.safeTransfer(msg.sender, total);
-        emit RewardsClaimed(msg.sender, total);
+
+        emit RewardsClaimed(msg.sender, total, currentRewardsClaimable());
     }
 
     function addRewards(uint256 rewardAmount) external {
-        require(totalInvest-totalWithdrawn > 0,"DUSDLock: can not distribute rewards on empty TVL");
+        require(currentTvl() > 0,"DUSDLock: can not distribute rewards on empty TVL");
         coin.safeTransferFrom(msg.sender, address(this), rewardAmount);
         totalRewards += rewardAmount;
 
-        rewardsPerDeposit += (rewardAmount * 1e18)/(totalInvest-totalWithdrawn);
+        rewardsPerDeposit += (rewardAmount * 1e18)/currentTvl();
 
-        emit RewardsAdded(rewardAmount, block.number-lastRewardsBlock, totalInvest-totalWithdrawn);
+        emit RewardsAdded(rewardAmount, block.number-lastRewardsBlock, currentRewardsClaimable());
         lastRewardsBlock= block.number;
     }
 }
