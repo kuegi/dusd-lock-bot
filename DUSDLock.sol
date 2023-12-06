@@ -111,12 +111,15 @@ contract DUSDLock {
     function withdraw(uint batchId) external returns(uint256 withdrawAmount) {
         LockEntry[] storage entries= investments[msg.sender];
         require(entries.length > batchId,"DUSDLock: batch not found for this address");
-        require(availableRewards(msg.sender,batchId) == 0,"DUSDLock: claim rewards before withdraw");
         
         LockEntry storage entry= entries[batchId];
         require(entry.lockedUntil < block.timestamp || exitCriteriaTriggered,"DUSDLock: can not withdraw before lockup ended");
         require(entry.amount > 0,"DUSDLock: already withdrawn");
-
+        
+        if(availableRewards(msg.sender,batchId) > 0) {
+            _claimBatch(msg.sender,batchId);
+        }
+        
         withdrawAmount= entry.amount;
         totalWithdrawn += withdrawAmount;
         entry.amount= 0;
@@ -126,14 +129,34 @@ contract DUSDLock {
     }
 
     function claimRewards(uint batchId) external returns(uint256 claimed) {
-        claimed= availableRewards(msg.sender,batchId);
+        return _claimBatch(msg.sender,batchId);
+    }
+
+    function _claimBatch(address addr, uint batchId) internal returns(uint256 claimed) {
+        claimed= availableRewards(addr,batchId);
         require(claimed > 0,"DUSDLock: no rewards to claim");
-        LockEntry storage entry= investments[msg.sender][batchId];
+        LockEntry storage entry= investments[addr][batchId];
         entry.claimedRewards += claimed;
         totalClaims += claimed;
-        coin.safeTransfer(msg.sender, claimed);
+        coin.safeTransfer(addr, claimed);
 
-        emit RewardsClaimed(msg.sender, claimed);
+        emit RewardsClaimed(addr, claimed);
+    }
+
+    function claimAllRewards(address addr) external returns(uint256 totalClaimed) {
+        LockEntry[] memory entries= investments[addr];
+        totalClaimed= 0;
+        for(uint batchId = 0; batchId < entries.length; ++batchId) {
+            uint256 claimed= availableRewards(msg.sender,batchId);
+            if(claimed > 0) {
+                LockEntry storage entry= investments[msg.sender][batchId];
+                entry.claimedRewards += claimed;
+                totalClaimed += claimed; 
+            }
+        }
+        totalClaims += totalClaimed;
+        coin.safeTransfer(msg.sender, totalClaimed);
+        emit RewardsClaimed(msg.sender, totalClaimed);
     }
 
     function addRewards(uint256 rewardAmount) external {
@@ -146,5 +169,4 @@ contract DUSDLock {
         emit RewardsAdded(rewardAmount, block.number-lastRewardsBlock, totalInvest-totalWithdrawn);
         lastRewardsBlock= block.number;
     }
-
 }
