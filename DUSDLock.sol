@@ -32,7 +32,7 @@ contract DUSDLock {
     uint256 public totalInvest;
     uint256 public totalWithdrawn;
     uint256 public totalRewards;
-    uint256 public totalClaims;
+    uint256 public totalClaimed;
 
     //keeps track of the total rewards per deposit since the beginning of the contract, number can only go up
     //is used for rewards calculation. as the total rewards for a specific deposits is (rewardsPerDeposit - rewardsPerDepositOnDeposit)*depositSize
@@ -137,26 +137,26 @@ contract DUSDLock {
         require(claimed > 0,"DUSDLock: no rewards to claim");
         LockEntry storage entry= investments[addr][batchId];
         entry.claimedRewards += claimed;
-        totalClaims += claimed;
+        totalClaimed += claimed;
         coin.safeTransfer(addr, claimed);
 
         emit RewardsClaimed(addr, claimed);
     }
 
-    function claimAllRewards(address addr) external returns(uint256 totalClaimed) {
-        LockEntry[] memory entries= investments[addr];
-        totalClaimed= 0;
+    function claimAllRewards() external returns(uint256 total) {
+        LockEntry[] memory entries= investments[msg.sender];
+        total= 0;
         for(uint batchId = 0; batchId < entries.length; ++batchId) {
             uint256 claimed= availableRewards(msg.sender,batchId);
             if(claimed > 0) {
                 LockEntry storage entry= investments[msg.sender][batchId];
                 entry.claimedRewards += claimed;
-                totalClaimed += claimed; 
+                total += claimed; 
             }
         }
-        totalClaims += totalClaimed;
-        coin.safeTransfer(msg.sender, totalClaimed);
-        emit RewardsClaimed(msg.sender, totalClaimed);
+        totalClaimed += total;
+        coin.safeTransfer(msg.sender, total);
+        emit RewardsClaimed(msg.sender, total);
     }
 
     function addRewards(uint256 rewardAmount) external {
