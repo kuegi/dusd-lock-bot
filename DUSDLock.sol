@@ -91,13 +91,13 @@ contract DUSDLock {
         }
     }
 
-    function availableOwnRewards() public view returns (uint256) {
-        LockEntry[] memory entries= investments[msg.sender];
-        uint256 ownRewards= 0;
+    function allAvailableRewards(address addr) public view returns (uint256) {
+        LockEntry[] memory entries= investments[addr];
+        uint256 allRewards= 0;
         for(uint batchId = 0; batchId < entries.length; ++batchId) {
-            ownRewards += availableRewards(msg.sender, batchId);
+            allRewards += availableRewards(addr, batchId);
         }
-        return ownRewards;
+        return allRewards;
     }
 
     function batchesInAddress(address addr) external view returns(uint) {
