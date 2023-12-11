@@ -39,6 +39,7 @@ contract DUSDLock {
     uint256 public rewardsPerDeposit;
 
     uint256 public lastRewardsBlock;
+    uint256 public lastRewardsAPR;
 
     constructor(uint256 lockupTime, uint256 _totalCap, IERC20 lockedCoin) {
         owner= msg.sender;
@@ -183,9 +184,10 @@ contract DUSDLock {
         coin.safeTransferFrom(msg.sender, address(this), rewardAmount);
         totalRewards += rewardAmount;
 
-        rewardsPerDeposit += (rewardAmount * 1e18)/currentTvl();
+        lastRewardsAPR = (rewardAmount * 1e18)/currentTvl();
+        rewardsPerDeposit += lastRewardsAPR;
 
-        emit RewardsAdded(rewardAmount, block.number-lastRewardsBlock, currentRewardsClaimable(),currentTvl());
+        emit RewardsAdded(rewardAmount, block.number-lastRewardsBlock, currentRewardsClaimable(), currentTvl());
         lastRewardsBlock= block.number;
     }
 }
