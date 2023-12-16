@@ -14,7 +14,7 @@ import { fromAddress } from '@defichain/jellyfish-address'
 import DUSDLock from './DUSDLock.json'
 import ERC20 from './ERC20.json'
 
-async function swapAndTransfer(): Promise<void> {
+async function swapAndTransferIntoSC(): Promise<void> {
   const ocean = new OceanAccess(TestNet)
   const evmProvider = new providers.JsonRpcProvider('https://dmc.mydefichain.com/' + ocean.network.name)
 
@@ -56,11 +56,27 @@ async function swapAndTransfer(): Promise<void> {
   )
   await ocean.sendAndWait(swap)
 
+  //remaining DFI in address should go to burn
+  const dfiToBurn = dfiInAddress.minus(dfiToSwap)
+  const burnScript = fromAddress('8defichainBurnAddressXXXXXXXdRQkSm', ocean.network.name)!.script
+  await account.withTransactionBuilder().account.accountToAccount(
+    {
+      from: dvmScript,
+      to: [
+        {
+          script: burnScript,
+          balances: [{ token: 0, amount: dfiToBurn }],
+        },
+      ],
+    },
+    dvmScript,
+  )
+  await ocean.sendAndWait(swap)
+
   //transfer to evm
   const amount = new BigNumber(
     (await ocean.client.address.listToken(dvmAddress)).find((t) => +t.id == dusdId)?.amount ?? 0,
   )
-
   const chainId = ocean.network == MainNet ? 1130 : 1131
 
   const tdTx = await createSignedTransferDomainTx({
@@ -80,37 +96,62 @@ async function swapAndTransfer(): Promise<void> {
   nonce = await evmProvider.getTransactionCount(evmAddress)
   const signer = new ethers.Wallet(await account.privateKey(), evmProvider)
 
-  // create call to Bot SC
-
+  // send Rewards into SC
   const dusdSC = new ethers.Contract(getAddressFromDST20TokenId(dusdId), ERC20.abi, signer)
 
-  //TODO: split amount 3/8 to 1 year lock and 5/8 to 2 year lock
-  // for each do the following:
+  //split amount 3/8 to 1 year lock and 5/8 to 2 year lock
 
-  const lockSCAddress = '0x...'
-  const lockSC = new ethers.Contract(lockSCAddress, DUSDLock.abi, signer)
+  const lock1Rewards = amount.times(3).div(8)
+  const lock2Rewards = amount.minus(lock1Rewards)
 
-  const approveTx = await signAndSendEVMTx(
+  const lock1SCAddress = '0x...'
+  const lock1SC = new ethers.Contract(lock1SCAddress, DUSDLock.abi, signer)
+
+  const lock2SCAddress = '0x...'
+  const lock2SC = new ethers.Contract(lock2SCAddress, DUSDLock.abi, signer)
+
+  const approve1Tx = await signAndSendEVMTx(
     signer,
-    await dusdSC.populateTransaction.approve(lockSCAddress, amount),
-    1_000_000,
+    await dusdSC.populateTransaction.approve(lock1SCAddress, lock1Rewards),
+    100_000,
     nonce,
     chainId,
     evmProvider,
   )
   nonce++
 
-  //TODO: add real gaslimit
-  const rewardsTx = await signAndSendEVMTx(
+  const approve2Tx = await signAndSendEVMTx(
     signer,
-    await lockSC.populateTransaction.addRewards(amount),
-    1_000_000,
+    await dusdSC.populateTransaction.approve(lock2SCAddress, lock2Rewards),
+    100_000,
+    nonce,
+    chainId,
+    evmProvider,
+  )
+  nonce++
+
+  const rewards1Tx = await signAndSendEVMTx(
+    signer,
+    await lock1SC.populateTransaction.addRewards(lock1Rewards),
+    100_000,
+    nonce,
+    chainId,
+    evmProvider,
+  )
+  nonce++
+
+  const rewards2Tx = await signAndSendEVMTx(
+    signer,
+    await lock2SC.populateTransaction.addRewards(lock2Rewards),
+    100_000,
     nonce,
     chainId,
     evmProvider,
   )
   nonce++
 }
+
+// helper for sending EVM tx
 
 async function signAndSendEVMTx(
   signer: ethers.Wallet,
@@ -127,5 +168,3 @@ async function signAndSendEVMTx(
   const signedTx = await signer.signTransaction(tx)
   return await provider.sendTransaction(signedTx)
 }
-
-// helper for sending
