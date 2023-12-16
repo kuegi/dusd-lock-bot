@@ -2,6 +2,8 @@
 pragma solidity >=0.8.22;
 
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
+import "@openzeppelin/contracts/utils/Strings.sol";
 
 struct LockEntry {
     uint256 amount;
@@ -10,16 +12,15 @@ struct LockEntry {
     uint256 claimedRewards;
 }
 
-contract DUSDLock {
+contract DUSDLock is ERC721Enumerable {
     using SafeERC20 for IERC20;
 
-    event DepositAdded(address depositer, uint256 amount, uint256 newTVL);
-    event Withdrawal(address user, uint256 withdrawnFunds, uint256 newTVL);
+    event DepositAdded(address depositer, uint256 batchId, uint256 amount, uint256 newTVL);
+    event Withdrawal(address user, uint256 batchId, uint256 withdrawnFunds, uint256 newTVL);
     event RewardsAdded(uint256 addedRewards, uint256 blocksSinceLastRewards, uint256 newRewardsClaimable, uint256 currentTvl);
-    event RewardsClaimed(address user, uint256 claimedRewards, uint256 newRewardsClaimable);
+    event RewardsClaimed(address user, uint256 batchId,  uint256 claimedRewards, uint256 newRewardsClaimable);
 
-    mapping(address => LockEntry[]) public investments;
-    address[] public allAddresses;
+    LockEntry[] public investments;
 
     //lockup period in seconds
     uint256 public immutable lockupPeriod;
@@ -40,7 +41,7 @@ contract DUSDLock {
 
     uint256 public lastRewardsBlock;
 
-    constructor(uint256 lockupTime, uint256 _totalCap, IERC20 lockedCoin) {
+    constructor(uint256 lockupTime, uint256 _totalCap, IERC20 lockedCoin) ERC721(string.concat("DUSD Locks ",Strings.toString(lockupTime/86400)),string.concat("LOCK",Strings.toString(lockupTime/86400))) {
         owner= msg.sender;
         lockupPeriod= lockupTime;
         totalInvestCap= _totalCap;
@@ -58,10 +59,10 @@ contract DUSDLock {
     }
 
     function currentOwnTvl() public view returns(uint256) {
-        LockEntry[] memory entries= investments[msg.sender];
         uint256 ownTvl= 0;
-        for(uint batchId = 0; batchId < entries.length; ++batchId) {
-            LockEntry storage entry= investments[msg.sender][batchId];
+        uint256 tokens= balanceOf(msg.sender);
+        for(uint idx = 0; idx < tokens; ++idx) {
+            LockEntry storage entry= investments[tokenOfOwnerByIndex(msg.sender,idx)];
             ownTvl += entry.amount; 
         }
         return ownTvl;
@@ -71,47 +72,35 @@ contract DUSDLock {
         return totalRewards-totalClaimed;
     }
 
-    function nrOfAddresses() external view returns(uint256) {
-        return allAddresses.length;
-    }
-
-    function getAllAddress() external view returns(address[] memory) {
-        return allAddresses;
-    }
-
-    function availableRewards(address addr,uint batch) public view returns(uint256) {
-        LockEntry[] memory entries= investments[addr];
-        require(entries.length > batch,"DUSDLock: batch not found for this address");
-        uint256 addedRewPerDeposit= rewardsPerDeposit - entries[batch].initialRewardsPerDeposit;
-        uint256 totalRewardsForFunds= addedRewPerDeposit*entries[batch].amount/1e18;
-        if(totalRewardsForFunds > entries[batch].claimedRewards) {
-            return totalRewardsForFunds - entries[batch].claimedRewards;
+    function availableRewards(uint256 batch) public view returns(uint256) {
+        LockEntry memory entry= investments[batch];
+        uint256 addedRewPerDeposit= rewardsPerDeposit - entry.initialRewardsPerDeposit;
+        uint256 totalRewardsForFunds= addedRewPerDeposit*entry.amount/1e18;
+        if(totalRewardsForFunds > entry.claimedRewards) {
+            return totalRewardsForFunds - entry.claimedRewards;
         } else {
             return  0;
         }
     }
 
     function allAvailableRewards(address addr) public view returns (uint256) {
-        LockEntry[] memory entries= investments[addr];
         uint256 allRewards= 0;
-        for(uint batchId = 0; batchId < entries.length; ++batchId) {
-            allRewards += availableRewards(addr, batchId);
+        uint256 tokens= balanceOf(addr);
+        for(uint idx = 0; idx < tokens; ++idx) {
+            allRewards += availableRewards(tokenOfOwnerByIndex(addr,idx));
         }
         return allRewards;
     }
 
-    function batchesInAddress(address addr) external view returns(uint) {
-        return investments[addr].length;
-    }
-
     function earliestUnlock(address addr) external view returns(uint256 timestamp,uint batchId) {
-        LockEntry[] memory entries= investments[addr];
         timestamp = block.timestamp + lockupPeriod;
         batchId = 0;
-        for(uint i= 0; i < entries.length;i++) {
-            if(entries[i].lockedUntil < timestamp) {
-                timestamp= entries[i].lockedUntil;
-                batchId= i;
+        uint256 tokens= balanceOf(addr);
+        for(uint idx = 0; idx < tokens; ++idx) {
+            uint256 tokenId= tokenOfOwnerByIndex(addr,idx);
+            if(investments[tokenId].lockedUntil < timestamp) {
+                timestamp= investments[tokenId].lockedUntil;
+                batchId= tokenId;
             }
         }
     }
@@ -119,63 +108,63 @@ contract DUSDLock {
     function lockup(uint256 funds) external {
         require(currentTvl()+funds <= totalInvestCap,"DUSDLock: Total invest cap reached");
         coin.safeTransferFrom(msg.sender,address(this),funds);
-        LockEntry[] storage entries= investments[msg.sender];
-        if(entries.length == 0) allAddresses.push(msg.sender);
-        entries.push(LockEntry(funds,block.timestamp+lockupPeriod,rewardsPerDeposit,0));
+        investments.push(LockEntry(funds,block.timestamp+lockupPeriod,rewardsPerDeposit,0));
+        _safeMint(msg.sender,investments.length);
         totalInvest += funds;
 
-        emit DepositAdded(msg.sender, funds, currentTvl());
+        emit DepositAdded(msg.sender, investments.length, funds, currentTvl());
     }
 
     function withdraw(uint batchId) external returns(uint256 withdrawAmount) {
-        LockEntry[] storage entries= investments[msg.sender];
-        require(entries.length > batchId,"DUSDLock: batch not found for this address");
-        
-        LockEntry storage entry= entries[batchId];
+        LockEntry storage entry= investments[batchId];
+        require(_ownerOf(batchId) == msg.sender,"DUSDLock: sender must be owner");
         require(entry.lockedUntil < block.timestamp || exitCriteriaTriggered,"DUSDLock: can not withdraw before lockup ended");
         require(entry.amount > 0,"DUSDLock: already withdrawn");
         
-        if(availableRewards(msg.sender,batchId) > 0) _claimBatch(msg.sender,batchId);
+        if(availableRewards(batchId) > 0) _claimBatch(batchId);
         
         withdrawAmount= entry.amount;
         totalWithdrawn += withdrawAmount;
         entry.amount= 0;
+        _burn(batchId);
         coin.safeTransfer(msg.sender, withdrawAmount);
 
-        emit Withdrawal(msg.sender, withdrawAmount, currentTvl());
+        emit Withdrawal(msg.sender, batchId, withdrawAmount, currentTvl());
     }
 
     function claimRewards(uint batchId) external returns(uint256 claimed) {
-        return _claimBatch(msg.sender,batchId);
+        require(_ownerOf(batchId) == msg.sender,"DUSDLock: sender must be owner");
+        return _claimBatch(batchId);
     }
 
-    function _claimBatch(address addr, uint batchId) internal returns(uint256 claimed) {
-        claimed= availableRewards(addr,batchId);
+    function _claimBatch(uint batchId) internal returns(uint256 claimed) {
+        claimed= availableRewards(batchId);
         require(claimed > 0,"DUSDLock: no rewards to claim");
-        LockEntry storage entry= investments[addr][batchId];
+        LockEntry storage entry= investments[batchId];
         entry.claimedRewards += claimed;
         totalClaimed += claimed;
-        coin.safeTransfer(addr, claimed);
+        coin.safeTransfer(_ownerOf(batchId) , claimed);
 
-        emit RewardsClaimed(addr, claimed, currentRewardsClaimable());
+        emit RewardsClaimed(_ownerOf(batchId), batchId, claimed, currentRewardsClaimable());
     }
 
     function claimAllRewards() external returns(uint256 total) {
-        LockEntry[] memory entries= investments[msg.sender];
         total= 0;
-        for(uint batchId = 0; batchId < entries.length; ++batchId) {
-            uint256 claimed= availableRewards(msg.sender,batchId);
+        uint256 tokens= balanceOf(msg.sender);
+        for(uint idx = 0; idx < tokens; ++idx) {
+            uint256 batchId= tokenOfOwnerByIndex(msg.sender, idx);
+            uint256 claimed= availableRewards(batchId);
             if(claimed > 0) {
-                LockEntry storage entry= investments[msg.sender][batchId];
+                LockEntry storage entry= investments[batchId];
                 entry.claimedRewards += claimed;
                 total += claimed; 
+                emit RewardsClaimed(msg.sender, batchId, claimed, currentRewardsClaimable());
             }
         }
         require(total > 0,"DUSDLock: no rewards to claim");
         totalClaimed += total;
         coin.safeTransfer(msg.sender, total);
 
-        emit RewardsClaimed(msg.sender, total, currentRewardsClaimable());
     }
 
     function addRewards(uint256 rewardAmount) external {
