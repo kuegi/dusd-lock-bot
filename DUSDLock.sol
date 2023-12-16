@@ -41,7 +41,8 @@ contract DUSDLock is ERC721Enumerable {
 
     uint256 public lastRewardsBlock;
 
-    constructor(uint256 lockupTime, uint256 _totalCap, IERC20 lockedCoin) ERC721(string.concat("DUSD Locks ",Strings.toString(lockupTime/86400)),string.concat("LOCK",Strings.toString(lockupTime/86400))) {
+    constructor(uint256 lockupTime, uint256 _totalCap, IERC20 lockedCoin) 
+                    ERC721(string.concat(Strings.toString(lockupTime/86400)," day DUSD Lock"),string.concat("LOCK",Strings.toString(lockupTime/86400))) {
         owner= msg.sender;
         lockupPeriod= lockupTime;
         totalInvestCap= _totalCap;
@@ -58,11 +59,11 @@ contract DUSDLock is ERC721Enumerable {
         return totalInvest-totalWithdrawn;
     }
 
-    function currentOwnTvl() public view returns(uint256) {
+    function currentTVLOfAddress(address addr) public view returns(uint256) {
         uint256 ownTvl= 0;
-        uint256 tokens= balanceOf(msg.sender);
+        uint256 tokens= balanceOf(addr);
         for(uint idx = 0; idx < tokens; ++idx) {
-            LockEntry storage entry= investments[tokenOfOwnerByIndex(msg.sender,idx)];
+            LockEntry storage entry= investments[tokenOfOwnerByIndex(addr,idx)];
             ownTvl += entry.amount; 
         }
         return ownTvl;
@@ -72,8 +73,8 @@ contract DUSDLock is ERC721Enumerable {
         return totalRewards-totalClaimed;
     }
 
-    function availableRewards(uint256 batch) public view returns(uint256) {
-        LockEntry memory entry= investments[batch];
+    function availableRewards(uint256 batchId) public view returns(uint256) {
+        LockEntry memory entry= investments[batchId];
         uint256 addedRewPerDeposit= rewardsPerDeposit - entry.initialRewardsPerDeposit;
         uint256 totalRewardsForFunds= addedRewPerDeposit*entry.amount/1e18;
         if(totalRewardsForFunds > entry.claimedRewards) {
@@ -92,15 +93,16 @@ contract DUSDLock is ERC721Enumerable {
         return allRewards;
     }
 
-    function earliestUnlock(address addr) external view returns(uint256 timestamp,uint batchId) {
+    function earliestUnlock(address addr) external view returns(uint256 timestamp,uint earliestBatchId) {
         timestamp = block.timestamp + lockupPeriod;
-        batchId = 0;
+        earliestBatchId = 0;
         uint256 tokens= balanceOf(addr);
+        require(tokens > 0,"DUSDLock: no tokens found in address");
         for(uint idx = 0; idx < tokens; ++idx) {
-            uint256 tokenId= tokenOfOwnerByIndex(addr,idx);
-            if(investments[tokenId].lockedUntil < timestamp) {
-                timestamp= investments[tokenId].lockedUntil;
-                batchId= tokenId;
+            uint256 batchId= tokenOfOwnerByIndex(addr,idx);
+            if(investments[batchId].lockedUntil < timestamp) {
+                timestamp= investments[batchId].lockedUntil;
+                earliestBatchId= batchId;
             }
         }
     }
@@ -109,8 +111,8 @@ contract DUSDLock is ERC721Enumerable {
         require(currentTvl()+funds <= totalInvestCap,"DUSDLock: Total invest cap reached");
         coin.safeTransferFrom(msg.sender,address(this),funds);
         investments.push(LockEntry(funds,block.timestamp+lockupPeriod,rewardsPerDeposit,0));
-        _safeMint(msg.sender,investments.length);
         totalInvest += funds;
+        _safeMint(msg.sender,investments.length-1);
 
         emit DepositAdded(msg.sender, investments.length, funds, currentTvl());
     }
