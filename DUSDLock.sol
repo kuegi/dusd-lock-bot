@@ -112,9 +112,10 @@ contract DUSDLock is ERC721Enumerable {
         coin.safeTransferFrom(msg.sender,address(this),funds);
         investments.push(LockEntry(funds,block.timestamp+lockupPeriod,rewardsPerDeposit,0));
         totalInvest += funds;
-        _safeMint(msg.sender,investments.length-1);
+        uint256 batchId= investments.length-1;
+        _safeMint(msg.sender,batchId);
 
-        emit DepositAdded(msg.sender, investments.length, funds, currentTvl());
+        emit DepositAdded(msg.sender, batchId, funds, currentTvl());
     }
 
     function withdraw(uint batchId) external returns(uint256 withdrawAmount) {
