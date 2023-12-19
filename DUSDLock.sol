@@ -16,7 +16,14 @@ struct LockEntry {
 
 contract Bond is ERC721Enumerable, Ownable {
 
-    constructor(string memory name_, string memory symbol_, address _manager) ERC721(name_,symbol_) Ownable(_manager) {
+    BondManager public immutable manager;
+
+    constructor(string memory name_, string memory symbol_, BondManager _manager) ERC721(name_,symbol_) Ownable(address(_manager)) {
+        manager= _manager;
+    }
+
+    function getTokenData(uint256 tokenId) view external returns (LockEntry memory) {
+        return manager.batchData(tokenId);
     }
 
     function safeMint(address receiver, uint256 tokenId) onlyOwner external {
@@ -67,7 +74,7 @@ contract BondManager is Ownable, ReentrancyGuard {
     uint256 public lastRewardsBlock;
 
     constructor(uint256 lockupTime, uint256 _totalCap, IERC20 lockedCoin) Ownable(msg.sender){
-        bondToken= new Bond(string.concat(Strings.toString(lockupTime/86400)," day DUSD Bond"),string.concat("DUSDBond",Strings.toString(lockupTime/86400)),address(this)); 
+        bondToken= new Bond(string.concat(Strings.toString(lockupTime/86400)," day DUSD Bond"),string.concat("DUSDBond",Strings.toString(lockupTime/86400)),this); 
         lockupPeriod= lockupTime;
         totalInvestCap= _totalCap;
         coin= lockedCoin;
@@ -80,6 +87,13 @@ contract BondManager is Ownable, ReentrancyGuard {
 
     function currentTvl() public view returns(uint256) {
         return totalInvest-totalWithdrawn;
+    }
+
+    function batchData(uint256 batchId) external view returns(LockEntry memory) {
+        if(batchId >= investments.length) {
+            revert BondsInvalidBond(batchId);
+        }
+        return investments[batchId];
     }
 
     function currentTVLOfAddress(address addr) public view returns(uint256) {
