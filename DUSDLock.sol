@@ -23,7 +23,7 @@ contract Bond is ERC721Enumerable, Ownable {
     }
 
     function getTokenData(uint256 tokenId) view external returns (LockEntry memory) {
-        return manager.batchData(tokenId);
+        return manager.getBatchData(tokenId);
     }
 
     function safeMint(address receiver, uint256 tokenId) onlyOwner external {
@@ -73,6 +73,23 @@ contract BondManager is Ownable, ReentrancyGuard {
 
     uint256 public lastRewardsBlock;
 
+    modifier validBatch(uint256 batchId) {
+        if(batchId >= investments.length) {
+            revert BondsInvalidBond(batchId);
+        }
+        _;
+    }
+
+    modifier ownedBatch(uint256 batchId) {
+        if(batchId >= investments.length) {
+            revert BondsInvalidBond(batchId);
+        }
+        if(bondToken.ownerOf(batchId) != msg.sender) {
+            revert BondsNotOwner(msg.sender,batchId);
+        }
+        _;
+    }
+
     constructor(uint256 lockupTime, uint256 _totalCap, IERC20 lockedCoin) Ownable(msg.sender){
         bondToken= new Bond(string.concat(Strings.toString(lockupTime/86400)," day DUSD Bond"),string.concat("DUSDBond",Strings.toString(lockupTime/86400)),this); 
         lockupPeriod= lockupTime;
@@ -85,11 +102,13 @@ contract BondManager is Ownable, ReentrancyGuard {
         exitCriteriaTriggered= true;
     }
 
+    // --- views -----
+
     function currentTvl() public view returns(uint256) {
         return totalInvest-totalWithdrawn;
     }
 
-    function batchData(uint256 batchId) external view returns(LockEntry memory) {
+    function getBatchData(uint256 batchId) external view returns(LockEntry memory) {
         if(batchId >= investments.length) {
             revert BondsInvalidBond(batchId);
         }
@@ -110,7 +129,7 @@ contract BondManager is Ownable, ReentrancyGuard {
         return totalRewards-totalClaimed;
     }
 
-    function availableRewards(uint256 batchId) public view returns(uint256) {
+    function availableRewards(uint256 batchId) public view validBatch(batchId) returns(uint256) {
         LockEntry memory entry= investments[batchId];
         uint256 addedRewPerDeposit= rewardsPerDeposit - entry.initialRewardsPerDeposit;
         uint256 totalRewardsForFunds= addedRewPerDeposit*entry.amount/1e18;
@@ -146,6 +165,8 @@ contract BondManager is Ownable, ReentrancyGuard {
         }
     }
 
+    // ------ Bond methods -----
+
     function lockup(uint256 funds) external nonReentrant {
         if(currentTvl()+funds > totalInvestCap) {
             revert BondsTotalCapReached();
@@ -159,14 +180,8 @@ contract BondManager is Ownable, ReentrancyGuard {
         emit DepositAdded(msg.sender, batchId, funds, currentTvl());
     }
 
-    function withdraw(uint batchId) external nonReentrant returns(uint256 withdrawAmount) {
-        if(batchId >= investments.length) {
-            revert BondsInvalidBond(batchId);
-        }
+    function withdraw(uint batchId) external nonReentrant ownedBatch(batchId) returns(uint256 withdrawAmount) {
         LockEntry storage entry= investments[batchId];
-        if(bondToken.ownerOf(batchId) != msg.sender) {
-            revert BondsNotOwner(msg.sender, batchId);
-        }
         if(entry.lockedUntil > block.timestamp && !exitCriteriaTriggered) {
             revert BondsNotWithdrawable(batchId);
         }
@@ -185,13 +200,7 @@ contract BondManager is Ownable, ReentrancyGuard {
         emit Withdrawal(msg.sender, batchId, withdrawAmount, currentTvl());
     }
 
-    function claimRewards(uint batchId) external nonReentrant returns(uint256 claimed) {
-         if(batchId >= investments.length) {
-            revert BondsInvalidBond(batchId);
-        }
-        if(bondToken.ownerOf(batchId) != msg.sender) {
-            revert BondsNotOwner(msg.sender, batchId);
-        }
+    function claimRewards(uint batchId) external nonReentrant ownedBatch(batchId)  returns(uint256 claimed) {
         return _claimBatch(batchId);
     }
 
@@ -228,6 +237,8 @@ contract BondManager is Ownable, ReentrancyGuard {
 
     }
 
+    //this method is used to add rewards to the bonds. can be called by anyone, 
+    // but is expected to be called by the native bot transfering the swapped DFI rewards (natively swapped to DUSD) in.
     function addRewards(uint256 rewardAmount) external {
         if(currentTvl() == 0) {
             revert BondsEmptyTVL();
