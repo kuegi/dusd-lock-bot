@@ -229,7 +229,8 @@ contract BondManager is Ownable, ReentrancyGuard {
                 total += claimed; 
                 emit RewardsClaimed(msg.sender, batchId, claimed, currentRewardsClaimable());
             }
-        }if(total == 0) {
+        }
+        if(total == 0) {
             revert BondsNoRewards();
         }
         totalClaimed += total;
