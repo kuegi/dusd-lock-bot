@@ -2,6 +2,7 @@
 pragma solidity >=0.8.22;
 
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -14,7 +15,7 @@ struct LockEntry {
     uint256 claimedRewards;
 }
 
-contract Bond is ERC721Enumerable, Ownable {
+contract Bond is ERC721, ERC721Enumerable, Ownable {
 
     BondManager public immutable manager;
 
@@ -30,8 +31,72 @@ contract Bond is ERC721Enumerable, Ownable {
         _safeMint(receiver, tokenId);
     }
 
+     function buildImage(uint256 _tokenId) public view returns(string memory) {
+      LockEntry memory dusdBondData = manager.getBatchData(_tokenId);
+      return Base64.encode(bytes(
+          abi.encodePacked(
+              '<svg width="500" height="500" xmlns="http://www.w3.org/2000/svg">',
+              '<rect height="500" width="500" fill="#FC1CAE"/>',
+              '<circle cx="250.5" cy="75.5" r="40.5" fill="#FFCCEF"/>',
+                '<path d="M258 45L250.5 43.5L247.5 58C240.761 59.0087 238.634 61.0024 236.5 66C235.836 73.8168 236.5 77.5 242.5 80.5C249 80.5 251.5 77.5 254.5 78.5C257.5 79.5 257 87.5 250.5 87.5C244 87.5 236.5 84 236.5 84L234.5 91.5L247.5 95L244 105.5L250.5 107.5C250.5 107.5 252.5 96 253.5 95C259.618 94.7847 269.601 79.6319 258 72C254.153 67.7358 244 77.5 244 67.5C247.652 61.5576 253.5 64.5 264.5 67.5L267.5 61L254.5 58L258 45Z" fill="#FF50C1"/>'
+              '<text x="50%" y="30%" dominant-baseline="middle" fill="#fff" text-anchor="middle" font-size="41">DUSD LOCK</text>',
+              '<text x="50%" y="50%" dominant-baseline="middle" fill="#fff" text-anchor="middle" font-size="41">',dusdBondData.amount,'</text>',
+              '<text x="50%" y="70%" dominant-baseline="middle" fill="#fff" text-anchor="middle" font-size="41">DUSD</text>',
+              '</svg>'
+          )
+      ));
+  }
+  
+  function buildMetadata(uint256 _tokenId) public view returns(string memory) {
+      LockEntry memory dusdBondData = manager.getBatchData(_tokenId);
+      return string(abi.encodePacked(
+              'data:application/json;base64,', Base64.encode(bytes(abi.encodePacked(
+                          '{"name":"DUSD Bond for ', 
+                         dusdBondData.amount,
+                          'DUSD", "description":"This NFT represents a Bond for ', 
+                          dusdBondData.amount,
+                          'DUSD using DUSD-LOCK Bot. It is Locked until',dusdBondData.lockedUntil,'", "image": "', 
+                          'data:image/svg+xml;base64,', 
+                          buildImage(_tokenId),
+                          '"}')))));
+  }
+
+  function tokenURI(uint256 _tokenId) public view virtual override(ERC721) returns (string memory) {
+      _requireOwned(_tokenId);
+      return buildMetadata(_tokenId);
+  }
+
     function burn(uint256 tokenId) onlyOwner external {
         _burn(tokenId);
+    }
+
+        // The following functions are overrides required by Solidity.
+
+
+     function _update(address to, uint256 tokenId, address auth)
+        internal
+        override(ERC721, ERC721Enumerable)
+        returns (address)
+    {
+        return super._update(to, tokenId, auth);
+    }
+
+    function _increaseBalance(address account, uint128 value)
+        internal
+        override(ERC721, ERC721Enumerable)
+    {
+        super._increaseBalance(account, value);
+    }
+
+ 
+
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override(ERC721, ERC721Enumerable)
+        returns (bool)
+    {
+        return super.supportsInterface(interfaceId);
     }
 }
 
@@ -251,5 +316,67 @@ contract BondManager is Ownable, ReentrancyGuard {
 
         emit RewardsAdded(rewardAmount, block.number-lastRewardsBlock, currentRewardsClaimable(),currentTvl());
         lastRewardsBlock= block.number;
+    }
+}
+
+
+/// @title Base64
+/// @author Brecht Devos - <brecht@loopring.org>
+/// @notice Provides a function for encoding some bytes in base64
+library Base64 {
+    string internal constant TABLE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+    function encode(bytes memory data) internal pure returns (string memory) {
+        if (data.length == 0) return '';
+        
+        // load the table into memory
+        string memory table = TABLE;
+
+        // multiply by 4/3 rounded up
+        uint256 encodedLen = 4 * ((data.length + 2) / 3);
+
+        // add some extra buffer at the end required for the writing
+        string memory result = new string(encodedLen + 32);
+
+        assembly {
+            // set the actual output length
+            mstore(result, encodedLen)
+            
+            // prepare the lookup table
+            let tablePtr := add(table, 1)
+            
+            // input ptr
+            let dataPtr := data
+            let endPtr := add(dataPtr, mload(data))
+            
+            // result ptr, jump over length
+            let resultPtr := add(result, 32)
+            
+            // run over the input, 3 bytes at a time
+            for {} lt(dataPtr, endPtr) {}
+            {
+               dataPtr := add(dataPtr, 3)
+               
+               // read 3 bytes
+               let input := mload(dataPtr)
+               
+               // write 4 characters
+               mstore(resultPtr, shl(248, mload(add(tablePtr, and(shr(18, input), 0x3F)))))
+               resultPtr := add(resultPtr, 1)
+               mstore(resultPtr, shl(248, mload(add(tablePtr, and(shr(12, input), 0x3F)))))
+               resultPtr := add(resultPtr, 1)
+               mstore(resultPtr, shl(248, mload(add(tablePtr, and(shr( 6, input), 0x3F)))))
+               resultPtr := add(resultPtr, 1)
+               mstore(resultPtr, shl(248, mload(add(tablePtr, and(        input,  0x3F)))))
+               resultPtr := add(resultPtr, 1)
+            }
+            
+            // padding with '='
+            switch mod(mload(data), 3)
+            case 1 { mstore(sub(resultPtr, 2), shl(240, 0x3d3d)) }
+            case 2 { mstore(sub(resultPtr, 1), shl(248, 0x3d)) }
+        }
+        
+        return result;
     }
 }
