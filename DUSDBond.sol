@@ -104,6 +104,7 @@ contract BondManager is Ownable, ReentrancyGuard {
     error BondsInvalidBond(uint256 batchId);
     error BondsAlreadyWithdrawn(uint256 batchId);
     error BondsNoRewards();
+    error BondsNothingWithdrawable();
     error BondsEmptyTVL();
 
     event DepositAdded(address depositer, uint256 batchId, uint256 amount, uint256 newTVL);
@@ -208,6 +209,20 @@ contract BondManager is Ownable, ReentrancyGuard {
         return allRewards;
     }
 
+
+    function allWithdrawableFunds(address addr) public view returns (uint256) {
+        uint256 allFunds= 0;
+        uint256 tokens= bondToken.balanceOf(addr);
+        for(uint idx = 0; idx < tokens; ++idx) {
+            uint256 batchId= bondToken.tokenOfOwnerByIndex(addr,idx);
+            LockEntry storage entry= investments[batchId];
+            if(entry.lockedUntil <= block.timestamp || exitCriteriaTriggered) {
+                allFunds += availableRewards(bondToken.tokenOfOwnerByIndex(addr,idx));
+            }
+        }
+        return allFunds;
+    }
+
     function earliestUnlock(address addr) external view returns(uint256 timestamp,uint earliestBatchId) {
         timestamp = block.timestamp + lockupPeriod;
         earliestBatchId = 0;
@@ -240,6 +255,10 @@ contract BondManager is Ownable, ReentrancyGuard {
     }
 
     function withdraw(uint batchId) external nonReentrant ownedBatch(batchId) returns(uint256 withdrawAmount) {
+        withdrawAmount= _withdrawBatch(batchId);
+    }
+
+    function _withdrawBatch(uint batchId) internal returns(uint256 withdrawAmount) {
         LockEntry storage entry= investments[batchId];
         if(entry.lockedUntil > block.timestamp && !exitCriteriaTriggered) {
             revert BondsNotWithdrawable(batchId);
@@ -295,6 +314,22 @@ contract BondManager is Ownable, ReentrancyGuard {
         totalClaimed += total;
         coin.safeTransfer(msg.sender, total);
 
+    }
+
+
+    function withdrawAllMyAvailableBatches() external nonReentrant returns(uint256 total) {
+        total= 0;
+        uint256 tokens= bondToken.balanceOf(msg.sender);
+        for(uint idx = 0; idx < tokens; ++idx) {
+            uint256 batchId= bondToken.tokenOfOwnerByIndex(msg.sender, idx);
+            LockEntry storage entry= investments[batchId];
+            if(entry.lockedUntil <= block.timestamp || exitCriteriaTriggered) {
+                total += _withdrawBatch(batchId);
+            }   
+        }
+        if(total == 0) {
+            revert BondsNothingWithdrawable();
+        }
     }
 
     //this method is used to add rewards to the bonds. can be called by anyone, 
