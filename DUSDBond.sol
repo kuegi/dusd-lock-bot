@@ -57,6 +57,7 @@ contract Bond is ERC721Enumerable, Ownable {
         LockEntry memory dusdBondData = manager.getBatchData(_tokenId);
         uint256 lockPeriodYears= manager.lockupPeriod()/(86400*365);
         //uint256 rewards= manager.availableRewards(_tokenId);
+        //TODO: add colored "mamba" based on locked amount
         return Base64.encode(bytes(
             abi.encodePacked(
                 '<svg width="100%" height="100%" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">',
@@ -65,7 +66,7 @@ contract Bond is ERC721Enumerable, Ownable {
                 '</defs>',
                 '<circle cx="64" cy="64" r="64" fill="#ffccef"/>'
                 '<path d="M56.03 49.85L63.34 45.63L127.94 62.94C127.88 59.06 127.49 55.26 126.77 51.58L69.15 36.13L78.42 1.54C74.97 0.74 71.41 0.22 67.77 0L58.03 36.36L50.7 40.59L49.97 41.03C42.87 45.63 40.56 55.04 44.84 62.45C49.26 70.11 59.05 72.73 66.71 68.31C69.26 66.84 72.51 67.71 73.98 70.26C75.45 72.81 74.58 76.07 72.03 77.54L63.79 82.3L0 65.24C0.08 69.13 0.49 72.94 1.24 76.63L58.01 91.82L48.85 126.07C52.29 126.9 55.83 127.46 59.46 127.71L69.14 91.56L77.37 86.81L78.09 86.37C85.18 81.76 87.5 72.36 83.22 64.95C78.8 57.3 69.01 54.67 61.36 59.09C58.81 60.56 55.55 59.69 54.08 57.14C52.61 54.59 53.48 51.33 56.03 49.86V49.85Z" fill="#ffa3e2"/>',
-                '<text width="96" fill="#FF00AF"><textPath xlink:href="#curve">',to2DigitString(dusdBondData.amount,1e18),' DUSD-',Strings.toString(lockPeriodYears),' year-BOND | ',formatTimestamp(dusdBondData.lockedUntil),'</textPath></text>',
+                '<text width="96" fill="#FF00AF"><textPath xlink:href="#curve">',to2DigitString(dusdBondData.amount,1e18),' DUSD-',Strings.toString(lockPeriodYears),'-year-BOND | until ',formatTimestamp(dusdBondData.lockedUntil),'</textPath></text>',
                 '</svg>'
             )
         ));

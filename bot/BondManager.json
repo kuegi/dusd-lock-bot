@@ -115,6 +115,11 @@
     },
     {
       "inputs": [],
+      "name": "BondsNothingWithdrawable",
+      "type": "error"
+    },
+    {
+      "inputs": [],
       "name": "BondsTotalCapReached",
       "type": "error"
     },
@@ -326,6 +331,25 @@
         }
       ],
       "name": "allAvailableRewards",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "addr",
+          "type": "address"
+        }
+      ],
+      "name": "allWithdrawableFunds",
       "outputs": [
         {
           "internalType": "uint256",
@@ -740,6 +764,19 @@
         {
           "internalType": "uint256",
           "name": "withdrawAmount",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "withdrawAllMyAvailableBatches",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "total",
           "type": "uint256"
         }
       ],
