@@ -350,8 +350,13 @@ contract BondManager is Ownable, ReentrancyGuard {
     function withdrawAllMyAvailableBatches() external nonReentrant returns (uint256 total) {
         total = 0;
         uint256 tokens = bondToken.balanceOf(msg.sender);
+        uint[] memory batches= new uint[](tokens);
+        //need to save list of tokenIds first. cause we change it by withdrawing (burns NFTS)
         for (uint idx = 0; idx < tokens; ++idx) {
-            uint256 batchId = bondToken.tokenOfOwnerByIndex(msg.sender, idx);
+            batches[idx]= bondToken.tokenOfOwnerByIndex(msg.sender, idx);
+        }
+        for (uint idx = 0; idx < tokens; ++idx) {
+            uint batchId= batches[idx];
             BondEntry storage entry = investments[batchId];
             if (entry.lockedUntil <= block.timestamp || exitCriteriaTriggered) {
                 total += _withdrawBatch(batchId);
@@ -376,10 +381,11 @@ contract BondManager is Ownable, ReentrancyGuard {
         withdrawAmount = entry.amount;
         totalWithdrawn += withdrawAmount;
         entry.amount = 0;
+        address owner= bondToken.ownerOf(batchId);
         bondToken.burn(batchId);
-        coin.safeTransfer(bondToken.ownerOf(batchId), withdrawAmount);
+        coin.safeTransfer(owner, withdrawAmount);
 
-        emit Withdrawal(bondToken.ownerOf(batchId), batchId, withdrawAmount, currentTvl());
+        emit Withdrawal(owner, batchId, withdrawAmount, currentTvl());
     }
 
     function claimRewards(uint batchId) external nonReentrant ownedBatch(batchId) returns (uint256 claimed) {
