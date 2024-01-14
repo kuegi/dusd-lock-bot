@@ -7,7 +7,7 @@ import '@openzeppelin/contracts/utils/Strings.sol';
 import '@openzeppelin/contracts/utils/ReentrancyGuard.sol';
 import '@openzeppelin/contracts/access/Ownable.sol';
 
-struct LockEntry {
+struct BondEntry {
     uint256 amount;
     uint256 lockedUntil;
     uint256 initialRewardsPerDeposit;
@@ -44,7 +44,7 @@ contract Bond is ERC721Enumerable, Ownable {
         manager = _manager;
     }
 
-    function getTokenData(uint256 tokenId) external view returns (LockEntry memory) {
+    function getTokenData(uint256 tokenId) external view returns (BondEntry memory) {
         return manager.getBatchData(tokenId);
     }
 
@@ -56,6 +56,8 @@ contract Bond is ERC721Enumerable, Ownable {
         _burn(tokenId);
     }
 
+    // the following views are only used for metadata and image creation of the NFT. They have no impact on the bond logic itself
+
     function to2DigitString(uint256 number, uint256 denominator) internal pure returns (string memory) {
         uint256 digitNumber = ((number * 100) / denominator) % 100;
         string memory digits = digitNumber >= 10
@@ -64,13 +66,13 @@ contract Bond is ERC721Enumerable, Ownable {
         return string(abi.encodePacked(Strings.toString(number / denominator), '.', digits));
     }
 
-    function formatTimestamp(uint256 tstamp) public view returns (string memory) {
+    function formatTimestamp(uint256 tstamp) internal view returns (string memory) {
         (uint year, uint month, uint day) = DateTime.timestampToDate(tstamp);
         return string(abi.encodePacked(Strings.toString(day), ' ', months[month - 1], ' ', Strings.toString(year)));
     }
 
-    function getCategory(uint256 _tokenId) public view returns (uint) {
-        LockEntry memory dusdBondData = manager.getBatchData(_tokenId);
+    function getCategory(uint256 _tokenId) internal view returns (uint) {
+        BondEntry memory dusdBondData = manager.getBatchData(_tokenId);
         return
             dusdBondData.amount >= CATEGORY_3_THRESHOLD ? 3
                 : (dusdBondData.amount >= CATEGORY_2_THRESHOLD ? 2
@@ -79,7 +81,7 @@ contract Bond is ERC721Enumerable, Ownable {
     }
 
     function buildImage(uint256 _tokenId) public view returns (string memory) {
-        LockEntry memory dusdBondData = manager.getBatchData(_tokenId);
+        BondEntry memory dusdBondData = manager.getBatchData(_tokenId);
         uint256 lockPeriodYears = manager.lockupPeriod() / (86400 * 365);
 
         uint category = getCategory(_tokenId);
@@ -134,7 +136,7 @@ contract Bond is ERC721Enumerable, Ownable {
     }
 
     function buildMetadata(uint256 _tokenId) public view returns (string memory) {
-        LockEntry memory dusdBondData = manager.getBatchData(_tokenId);
+        BondEntry memory dusdBondData = manager.getBatchData(_tokenId);
         uint256 rewards = manager.availableRewards(_tokenId);
         uint256 lockPeriodYears = manager.lockupPeriod() / (86400 * 365);
         uint category = getCategory(_tokenId);
@@ -193,6 +195,7 @@ contract BondManager is Ownable, ReentrancyGuard {
 
     error BondsNoBondsInAddress(address owner);
     error BondsTotalCapReached();
+    error BondsNoFunds();
     error BondsNotOwner(address user, uint256 batchId);
     error BondsNotWithdrawable(uint256 batchId);
     error BondsInvalidBond(uint256 batchId);
@@ -211,7 +214,7 @@ contract BondManager is Ownable, ReentrancyGuard {
     );
     event RewardsClaimed(address user, uint256 batchId, uint256 claimedRewards, uint256 newRewardsClaimable);
 
-    LockEntry[] public investments;
+    BondEntry[] public investments;
 
     //lockup period in seconds
     uint256 public immutable lockupPeriod;
@@ -271,10 +274,7 @@ contract BondManager is Ownable, ReentrancyGuard {
         return totalInvest - totalWithdrawn;
     }
 
-    function getBatchData(uint256 batchId) external view returns (LockEntry memory) {
-        if (batchId >= investments.length) {
-            revert BondsInvalidBond(batchId);
-        }
+    function getBatchData(uint256 batchId) external view validBatch(batchId) returns (BondEntry memory) {
         return investments[batchId];
     }
 
@@ -282,7 +282,7 @@ contract BondManager is Ownable, ReentrancyGuard {
         uint256 ownTvl = 0;
         uint256 tokens = bondToken.balanceOf(addr);
         for (uint idx = 0; idx < tokens; ++idx) {
-            LockEntry storage entry = investments[bondToken.tokenOfOwnerByIndex(addr, idx)];
+            BondEntry storage entry = investments[bondToken.tokenOfOwnerByIndex(addr, idx)];
             ownTvl += entry.amount;
         }
         return ownTvl;
@@ -293,7 +293,7 @@ contract BondManager is Ownable, ReentrancyGuard {
     }
 
     function availableRewards(uint256 batchId) public view validBatch(batchId) returns (uint256) {
-        LockEntry memory entry = investments[batchId];
+        BondEntry memory entry = investments[batchId];
         uint256 addedRewPerDeposit = rewardsPerDeposit - entry.initialRewardsPerDeposit;
         uint256 totalRewardsForFunds = (addedRewPerDeposit * entry.amount) / 1e18;
         if (totalRewardsForFunds > entry.claimedRewards) {
@@ -317,7 +317,7 @@ contract BondManager is Ownable, ReentrancyGuard {
         uint256 tokens = bondToken.balanceOf(addr);
         for (uint idx = 0; idx < tokens; ++idx) {
             uint256 batchId = bondToken.tokenOfOwnerByIndex(addr, idx);
-            LockEntry storage entry = investments[batchId];
+            BondEntry storage entry = investments[batchId];
             if (entry.lockedUntil <= block.timestamp || exitCriteriaTriggered) {
                 allFunds += entry.amount;
             }
@@ -331,8 +331,11 @@ contract BondManager is Ownable, ReentrancyGuard {
         if (currentTvl() + funds > totalInvestCap) {
             revert BondsTotalCapReached();
         }
+        if(funds == 0) {
+            revert BondsNoFunds();
+        }
         coin.safeTransferFrom(msg.sender, address(this), funds);
-        investments.push(LockEntry(funds, block.timestamp + lockupPeriod, rewardsPerDeposit, 0));
+        investments.push(BondEntry(funds, block.timestamp + lockupPeriod, rewardsPerDeposit, 0));
         totalInvest += funds;
         uint256 batchId = investments.length - 1;
         bondToken.safeMint(msg.sender, batchId);
@@ -347,9 +350,14 @@ contract BondManager is Ownable, ReentrancyGuard {
     function withdrawAllMyAvailableBatches() external nonReentrant returns (uint256 total) {
         total = 0;
         uint256 tokens = bondToken.balanceOf(msg.sender);
+        uint[] memory batches= new uint[](tokens);
+        //need to save list of tokenIds first. cause we change it by withdrawing (burns NFTS)
         for (uint idx = 0; idx < tokens; ++idx) {
-            uint256 batchId = bondToken.tokenOfOwnerByIndex(msg.sender, idx);
-            LockEntry storage entry = investments[batchId];
+            batches[idx]= bondToken.tokenOfOwnerByIndex(msg.sender, idx);
+        }
+        for (uint idx = 0; idx < tokens; ++idx) {
+            uint batchId= batches[idx];
+            BondEntry storage entry = investments[batchId];
             if (entry.lockedUntil <= block.timestamp || exitCriteriaTriggered) {
                 total += _withdrawBatch(batchId);
             }
@@ -360,7 +368,7 @@ contract BondManager is Ownable, ReentrancyGuard {
     }
 
     function _withdrawBatch(uint batchId) internal returns (uint256 withdrawAmount) {
-        LockEntry storage entry = investments[batchId];
+        BondEntry storage entry = investments[batchId];
         if (entry.lockedUntil > block.timestamp && !exitCriteriaTriggered) {
             revert BondsNotWithdrawable(batchId);
         }
@@ -373,10 +381,11 @@ contract BondManager is Ownable, ReentrancyGuard {
         withdrawAmount = entry.amount;
         totalWithdrawn += withdrawAmount;
         entry.amount = 0;
+        address owner= bondToken.ownerOf(batchId);
         bondToken.burn(batchId);
-        coin.safeTransfer(msg.sender, withdrawAmount);
+        coin.safeTransfer(owner, withdrawAmount);
 
-        emit Withdrawal(msg.sender, batchId, withdrawAmount, currentTvl());
+        emit Withdrawal(owner, batchId, withdrawAmount, currentTvl());
     }
 
     function claimRewards(uint batchId) external nonReentrant ownedBatch(batchId) returns (uint256 claimed) {
@@ -388,7 +397,7 @@ contract BondManager is Ownable, ReentrancyGuard {
         if (claimed == 0) {
             revert BondsNoRewards();
         }
-        LockEntry storage entry = investments[batchId];
+        BondEntry storage entry = investments[batchId];
         entry.claimedRewards += claimed;
         totalClaimed += claimed;
         coin.safeTransfer(bondToken.ownerOf(batchId), claimed);
@@ -403,7 +412,7 @@ contract BondManager is Ownable, ReentrancyGuard {
             uint256 batchId = bondToken.tokenOfOwnerByIndex(msg.sender, idx);
             uint256 claimed = availableRewards(batchId);
             if (claimed > 0) {
-                LockEntry storage entry = investments[batchId];
+                BondEntry storage entry = investments[batchId];
                 entry.claimedRewards += claimed;
                 total += claimed;
                 emit RewardsClaimed(msg.sender, batchId, claimed, currentRewardsClaimable());
