@@ -4,12 +4,12 @@
       "inputs": [
         {
           "internalType": "string",
-          "name": "name_",
+          "name": "_name",
           "type": "string"
         },
         {
           "internalType": "string",
-          "name": "symbol_",
+          "name": "_symbol",
           "type": "string"
         },
         {
@@ -353,25 +353,6 @@
       "inputs": [
         {
           "internalType": "uint256",
-          "name": "tstamp",
-          "type": "uint256"
-        }
-      ],
-      "name": "formatTimestamp",
-      "outputs": [
-        {
-          "internalType": "string",
-          "name": "",
-          "type": "string"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
           "name": "tokenId",
           "type": "uint256"
         }
@@ -420,7 +401,7 @@
               "type": "uint256"
             }
           ],
-          "internalType": "struct LockEntry",
+          "internalType": "struct BondEntry",
           "name": "",
           "type": "tuple"
         }
