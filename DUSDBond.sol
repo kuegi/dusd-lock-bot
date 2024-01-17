@@ -21,6 +21,8 @@ contract Bond is ERC721Enumerable, Ownable {
     uint constant CATEGORY_2_THRESHOLD = 10_000 ether;
     uint constant CATEGORY_3_THRESHOLD = 100_000 ether;
 
+    uint constant PERIOD_REFERENCE= 86400*365;
+
     string[12] months = [
         'January',
         'February',
@@ -82,7 +84,7 @@ contract Bond is ERC721Enumerable, Ownable {
 
     function buildImage(uint256 _tokenId) public view returns (string memory) {
         BondEntry memory dusdBondData = manager.getBatchData(_tokenId);
-        uint256 lockPeriodYears = manager.lockupPeriod() / (86400 * 365);
+        uint256 lockPeriodYears = manager.lockupPeriod() / PERIOD_REFERENCE;
 
         uint category = getCategory(_tokenId);
 
@@ -138,7 +140,7 @@ contract Bond is ERC721Enumerable, Ownable {
     function buildMetadata(uint256 _tokenId) public view returns (string memory) {
         BondEntry memory dusdBondData = manager.getBatchData(_tokenId);
         uint256 rewards = manager.availableRewards(_tokenId);
-        uint256 lockPeriodYears = manager.lockupPeriod() / (86400 * 365);
+        uint256 lockPeriodYears = manager.lockupPeriod() / PERIOD_REFERENCE;
         uint category = getCategory(_tokenId);
         string memory catString = 'standard';
         if (category == 1) {
@@ -157,8 +159,8 @@ contract Bond is ERC721Enumerable, Ownable {
                         bytes(
                             abi.encodePacked(
                                 '{',
-                                '"name":"',Strings.toString(lockPeriodYears),' year Bond for ',to2DigitString(dusdBondData.amount, 1e18),' DUSD",',
-                                '"description":"This NFT represents a Bond for ',to2DigitString(dusdBondData.amount, 1e18),' DUSD. It is Locked until ',formatTimestamp(dusdBondData.lockedUntil),'",',
+                                '"name":"',Strings.toString(lockPeriodYears),' year bond for ',to2DigitString(dusdBondData.amount, 1e18),' DUSD",',
+                                '"description":"This NFT represents a bond for ',to2DigitString(dusdBondData.amount, 1e18),' DUSD. It is locked until ',formatTimestamp(dusdBondData.lockedUntil),'",',
                                 '"image": "data:image/svg+xml;base64,',buildImage(_tokenId),'",',
                                 '"attributes":[{',
                                     '"trait_type":"amount",',
@@ -214,6 +216,8 @@ contract BondManager is Ownable, ReentrancyGuard {
     );
     event RewardsClaimed(address user, uint256 batchId, uint256 claimedRewards, uint256 newRewardsClaimable);
 
+    uint constant PERIOD_REFERENCE= 86400*365;
+
     BondEntry[] public investments;
 
     //lockup period in seconds
@@ -254,8 +258,8 @@ contract BondManager is Ownable, ReentrancyGuard {
 
     constructor(uint256 lockupTime, uint256 totalCap, IERC20 lockedCoin) Ownable(msg.sender) {
         bondToken = new Bond(
-            string.concat(Strings.toString(lockupTime / (86400 * 365)), ' year DUSD Bond'),
-            string.concat('DUSDBond', Strings.toString(lockupTime / (86400 * 365))),
+            string.concat(Strings.toString(lockupTime / PERIOD_REFERENCE), ' year DUSD bond'),
+            string.concat('DUSDBond', Strings.toString(lockupTime / PERIOD_REFERENCE)),
             this
         );
         lockupPeriod = lockupTime;

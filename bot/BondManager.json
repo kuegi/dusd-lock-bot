@@ -9,7 +9,7 @@
         },
         {
           "internalType": "uint256",
-          "name": "_totalCap",
+          "name": "totalCap",
           "type": "uint256"
         },
         {
@@ -47,6 +47,19 @@
       "inputs": [
         {
           "internalType": "uint256",
+          "name": "rewardAmount",
+          "type": "uint256"
+        }
+      ],
+      "name": "addRewards",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
           "name": "batchId",
           "type": "uint256"
         }
@@ -79,6 +92,11 @@
         }
       ],
       "name": "BondsNoBondsInAddress",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "BondsNoFunds",
       "type": "error"
     },
     {
@@ -125,8 +143,53 @@
     },
     {
       "inputs": [],
+      "name": "claimAllRewards",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "total",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "batchId",
+          "type": "uint256"
+        }
+      ],
+      "name": "claimRewards",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "claimed",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
       "name": "FailedInnerCall",
       "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "funds",
+          "type": "uint256"
+        }
+      ],
+      "name": "lockup",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
     },
     {
       "inputs": [
@@ -217,6 +280,13 @@
       "type": "event"
     },
     {
+      "inputs": [],
+      "name": "renounceOwnership",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
       "anonymous": false,
       "inputs": [
         {
@@ -279,6 +349,45 @@
       "type": "event"
     },
     {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "newOwner",
+          "type": "address"
+        }
+      ],
+      "name": "transferOwnership",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "triggerExitCriteria",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "batchId",
+          "type": "uint256"
+        }
+      ],
+      "name": "withdraw",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "withdrawAmount",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
       "anonymous": false,
       "inputs": [
         {
@@ -310,15 +419,15 @@
       "type": "event"
     },
     {
-      "inputs": [
+      "inputs": [],
+      "name": "withdrawAllMyAvailableBatches",
+      "outputs": [
         {
           "internalType": "uint256",
-          "name": "rewardAmount",
+          "name": "total",
           "type": "uint256"
         }
       ],
-      "name": "addRewards",
-      "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
     },
@@ -394,38 +503,6 @@
     },
     {
       "inputs": [],
-      "name": "claimAllRewards",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "total",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "batchId",
-          "type": "uint256"
-        }
-      ],
-      "name": "claimRewards",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "claimed",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [],
       "name": "coin",
       "outputs": [
         {
@@ -440,25 +517,6 @@
     {
       "inputs": [],
       "name": "currentRewardsClaimable",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "addr",
-          "type": "address"
-        }
-      ],
-      "name": "currentTVLOfAddress",
       "outputs": [
         {
           "internalType": "uint256",
@@ -490,16 +548,11 @@
           "type": "address"
         }
       ],
-      "name": "earliestUnlock",
+      "name": "currentTVLOfAddress",
       "outputs": [
         {
           "internalType": "uint256",
-          "name": "timestamp",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "earliestBatchId",
+          "name": "",
           "type": "uint256"
         }
       ],
@@ -552,7 +605,7 @@
               "type": "uint256"
             }
           ],
-          "internalType": "struct LockEntry",
+          "internalType": "struct BondEntry",
           "name": "",
           "type": "tuple"
         }
@@ -608,19 +661,6 @@
       "type": "function"
     },
     {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "funds",
-          "type": "uint256"
-        }
-      ],
-      "name": "lockup",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
       "inputs": [],
       "name": "lockupPeriod",
       "outputs": [
@@ -644,13 +684,6 @@
         }
       ],
       "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "renounceOwnership",
-      "outputs": [],
-      "stateMutability": "nonpayable",
       "type": "function"
     },
     {
@@ -729,58 +762,6 @@
         }
       ],
       "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "newOwner",
-          "type": "address"
-        }
-      ],
-      "name": "transferOwnership",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "triggerExitCriteria",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
-          "name": "batchId",
-          "type": "uint256"
-        }
-      ],
-      "name": "withdraw",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "withdrawAmount",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "withdrawAllMyAvailableBatches",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "total",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "nonpayable",
       "type": "function"
     }
   ]
