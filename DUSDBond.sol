@@ -258,7 +258,7 @@ contract BondManager is Ownable, ReentrancyGuard {
 
     constructor(uint256 lockupTime, uint256 totalCap, IERC20 lockedCoin) Ownable(msg.sender) {
         bondToken = new Bond(
-            string.concat(Strings.toString(lockupTime / PERIOD_REFERENCE), ' year DUSD Bond'),
+            string.concat(Strings.toString(lockupTime / PERIOD_REFERENCE), ' year DUSD bond'),
             string.concat('DUSDBond', Strings.toString(lockupTime / PERIOD_REFERENCE)),
             this
         );
